@@ -35,6 +35,7 @@ jobs:
     - name: Generate JUnit XML for test results
       working-directory: ./calculator-project
       run: |
+        export PYTHONPATH=$(pwd)
         pytest tests/ --junitxml=test-results.xml
 
     - name: Generate coverage reports
@@ -49,7 +50,7 @@ jobs:
       with:
         name: Python Unit Tests Report
         path: calculator-project/test-results.xml
-        reporter: pytest-junit
+        reporter: java-junit
 
     - name: Add coverage report to step summary
       working-directory: ./calculator-project
