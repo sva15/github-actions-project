@@ -73,13 +73,12 @@ jobs:
         echo "report<<EOF" >> $GITHUB_OUTPUT
         cat coverage.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
-          
-        
+
     - name: SonarQube Scan
       if: github.ref == 'refs/heads/main'
       uses: SonarSource/sonarqube-scan-action@v5
       with:
-        projectBaseDir: calculator-project
+        projectBaseDir: .
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -89,12 +88,14 @@ jobs:
       uses: sonarsource/sonarqube-quality-gate-action@master
       with:
         pollingTimeoutSec: 600
+        projectBaseDir: .
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     - name: "Show SonarQube Quality Gate Status value"
       if: github.ref == 'refs/heads/main'
       run: echo "The Quality Gate status is ${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
+    
     outputs:
       coverage: ${{ steps.coverage-output.outputs.report }}
 
