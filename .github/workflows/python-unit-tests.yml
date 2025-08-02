@@ -32,11 +32,11 @@ jobs:
         export PYTHONPATH=$(pwd)
         coverage run -m pytest tests/
 
-    - name: Generate JUnit XML for test results
+    - name: Save pytest output to file
       working-directory: ./calculator-project
       run: |
         export PYTHONPATH=$(pwd)
-        pytest tests/ --junitxml=test-results.xml
+        pytest tests/ > pytest.txt
 
     - name: Generate coverage reports
       working-directory: ./calculator-project
@@ -44,21 +44,27 @@ jobs:
         coverage report > coverage.txt
         coverage xml
 
-    # - name: Publish Unit Test Results
-    #   uses: dorny/test-reporter@v1
-    #   if: always()
-    #   with:
-    #     name: Python Unit Tests Report
-    #     path: calculator-project/test-results.xml
-    #     reporter: jest-junit
-
-    - name: Add coverage report to step summary
+    - name: Publish unit test and coverage report
       working-directory: ./calculator-project
       run: |
+        echo "## Python Unit Test Results" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat pytest.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
         echo "## Python Coverage Report" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
         cat coverage.txt >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Check coverage threshold
+      working-directory: ./calculator-project
+      run: |
+        coverage_percentage=$(grep TOTAL coverage.txt | awk '{print $4}' | sed 's/%//')
+        echo "Coverage: $coverage_percentage%"
+        if (( $(echo "$coverage_percentage < 90" | bc -l) )); then
+          echo "Code coverage is below 90% (Current: $coverage_percentage%)"
+          exit 1
+        fi
 
     - name: Output coverage for PR comment
       id: coverage-output
@@ -68,21 +74,27 @@ jobs:
         cat coverage.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
           
-    - name: Check coverage threshold
-      working-directory: ./calculator-project
-      run: |
-        coverage_percentage=$(coverage report | grep "TOTAL" | awk '{print $4}' | sed 's/%//')
-        if (( $(echo "$coverage_percentage < 80" | bc -l) )); then
-          echo "Code coverage is below 80% (Current: $coverage_percentage%)"
-          exit 1
-        fi
         
     - name: SonarQube Scan
+      if: github.ref == 'refs/heads/main'
       uses: SonarSource/sonarqube-scan-action@v5
       with:
         projectBaseDir: calculator-project
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    - name: SonarQube Quality Gate check
+      if: github.ref == 'refs/heads/main'
+      id: sonarqube-quality-gate-check
+      uses: sonarsource/sonarqube-quality-gate-action@master
+      with:
+        pollingTimeoutSec: 600
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    - name: "Show SonarQube Quality Gate Status value"
+      if: github.ref == 'refs/heads/main'
+      run: echo "The Quality Gate status is ${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
     outputs:
       coverage: ${{ steps.coverage-output.outputs.report }}
 
