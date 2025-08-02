@@ -50,7 +50,7 @@ jobs:
       with:
         name: Python Unit Tests Report
         path: calculator-project/test-results.xml
-        reporter: java-junit
+        reporter: jest-junit
 
     - name: Add coverage report to step summary
       working-directory: ./calculator-project
