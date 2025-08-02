@@ -9,20 +9,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true  # Stop all jobs if one fails
-      matrix:
-        python-version: ["3.12"]
-
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
     
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python 3.12
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: 3.12
         cache: 'pip'  # Enable pip caching
         
     - name: Install dependencies
@@ -44,15 +39,22 @@ jobs:
         echo '```' >> $GITHUB_STEP_SUMMARY
         coverage report >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-        
-    # - name: Upload test results
-    #   if: always()  # Run even if tests fail
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: test-results-${{ matrix.python-version }}
-    #     path: |
-    #       calculator-project/test-results.xml
-    #       calculator-project/htmlcov
+
+    - name: Publish Unit Test Results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Python Unit Tests Report
+        path: calculator-project/test-results.xml
+        reporter: pytest-junit
+
+    - name: Output coverage for PR comment
+      id: coverage-output
+      working-directory: ./calculator-project
+      run: |
+        echo "report<<EOF" >> $GITHUB_OUTPUT
+        coverage report >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
           
     - name: Check coverage threshold
       working-directory: ./calculator-project
@@ -69,3 +71,24 @@ jobs:
         projectBaseDir: calculator-project
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    outputs:
+      coverage: ${{ steps.coverage-output.outputs.report }}
+
+  comment-coverage:
+    if: github.event_name == 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment Coverage Report
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Python Coverage Report
+            ```
+            ${{ needs.test.outputs.coverage }}
+            ```
+
+    
