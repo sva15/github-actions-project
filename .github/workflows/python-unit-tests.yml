@@ -26,19 +26,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run tests with pytest
+    - name: Run tests and collect coverage
       working-directory: ./calculator-project
       run: |
         export PYTHONPATH=$(pwd)
-        pytest tests/ --cov=src/ --cov-report=xml --cov-report=html --junitxml=test-results.xml
+        coverage run -m pytest tests/
 
-    - name: Add coverage report to step summary
+    - name: Generate JUnit XML for test results
       working-directory: ./calculator-project
       run: |
-        echo "## Python Coverage Report" >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
-        coverage report >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
+        pytest tests/ --junitxml=test-results.xml
+
+    - name: Generate coverage reports
+      working-directory: ./calculator-project
+      run: |
+        coverage report > coverage.txt
+        coverage xml
 
     - name: Publish Unit Test Results
       uses: dorny/test-reporter@v1
@@ -48,12 +51,20 @@ jobs:
         path: calculator-project/test-results.xml
         reporter: pytest-junit
 
+    - name: Add coverage report to step summary
+      working-directory: ./calculator-project
+      run: |
+        echo "## Python Coverage Report" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat coverage.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
     - name: Output coverage for PR comment
       id: coverage-output
       working-directory: ./calculator-project
       run: |
         echo "report<<EOF" >> $GITHUB_OUTPUT
-        coverage report >> $GITHUB_OUTPUT
+        cat coverage.txt >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
           
     - name: Check coverage threshold
