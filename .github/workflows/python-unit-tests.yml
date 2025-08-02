@@ -76,7 +76,7 @@ jobs:
 
     - name: SonarQube Scan
       if: github.ref == 'refs/heads/main'
-      uses: SonarSource/sonarqube-scan-action@v5
+      uses: sonarsource/sonarqube-scan-action@master
       with:
         projectBaseDir: ./calculator-project
       env:
@@ -88,7 +88,8 @@ jobs:
       uses: sonarsource/sonarqube-quality-gate-action@master
       with:
         pollingTimeoutSec: 600
-        projectBaseDir: ./calculator-project
+        #projectBaseDir: ./calculator-project
+       #scanMetadataReportFile: ./calculator-project/.scannerwork/report-task.txt
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
