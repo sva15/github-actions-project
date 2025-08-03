@@ -16,10 +16,61 @@ class UserService:
     def __init__(self):
         # In a real application, this would connect to a database
         self.users = {}
+        self._initialize_sample_data()
     
     def get_current_time(self) -> str:
         """Get current timestamp"""
         return datetime.utcnow().isoformat()
+    
+    def _initialize_sample_data(self):
+        """Initialize with sample users for demo"""
+        sample_users = [
+            {
+                'id': '1',
+                'name': 'John Doe',
+                'email': 'john.doe@cloudsync.com',
+                'created_at': '2024-01-15T10:30:00Z',
+                'updated_at': '2024-01-15T10:30:00Z'
+            },
+            {
+                'id': '2', 
+                'name': 'Jane Smith',
+                'email': 'jane.smith@cloudsync.com',
+                'created_at': '2024-01-20T14:45:00Z',
+                'updated_at': '2024-01-20T14:45:00Z'
+            },
+            {
+                'id': '3',
+                'name': 'Mike Johnson', 
+                'email': 'mike.johnson@cloudsync.com',
+                'created_at': '2024-02-01T09:15:00Z',
+                'updated_at': '2024-02-01T09:15:00Z'
+            }
+        ]
+        
+        for user in sample_users:
+            self.users[user['id']] = user
+    
+    def get_users(self) -> Dict[str, Any]:
+        """Get all users"""
+        try:
+            users_list = list(self.users.values())
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': f'Retrieved {len(users_list)} users',
+                    'user': users_list,  # Frontend expects 'user' key
+                    'count': len(users_list)
+                })
+            }
+        except Exception as e:
+            logger.error(f"Error getting users: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({
+                    'error': str(e)
+                })
+            }
     
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user"""

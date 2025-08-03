@@ -28,6 +28,7 @@ class NotificationService:
         # In a real application, this would connect to a database
         self.notifications = {}
         self._initialize_templates()
+        self._initialize_sample_data()
     
     def get_current_time(self) -> str:
         """Get current timestamp"""
@@ -49,6 +50,46 @@ class NotificationService:
                 'body': 'Hello {name}, your order #{order_id} has been confirmed!'
             }
         }
+    
+    def _initialize_sample_data(self):
+        """Initialize with sample notifications for demo"""
+        sample_notifications = [
+            {
+                'id': '1',
+                'recipient': 'john.doe@cloudsync.com',
+                'type': 'email',
+                'template': 'welcome',
+                'subject': 'Welcome to CloudSync Platform!',
+                'message': 'Hello John Doe, welcome to our amazing platform!',
+                'status': 'sent',
+                'created_at': '2024-02-01T10:00:00Z',
+                'sent_at': '2024-02-01T10:01:00Z'
+            },
+            {
+                'id': '2',
+                'recipient': 'jane.smith@cloudsync.com',
+                'type': 'email',
+                'template': 'password_reset',
+                'subject': 'Password Reset Request',
+                'message': 'Hello Jane Smith, click here to reset your password: https://cloudsync.com/reset/abc123',
+                'status': 'sent',
+                'created_at': '2024-02-01T14:30:00Z',
+                'sent_at': '2024-02-01T14:31:00Z'
+            },
+            {
+                'id': '3',
+                'recipient': 'mike.johnson@cloudsync.com',
+                'type': 'email',
+                'template': 'order_confirmation',
+                'subject': 'Order Confirmation',
+                'message': 'Hello Mike Johnson, your order #12345 has been confirmed!',
+                'status': 'pending',
+                'created_at': '2024-02-01T16:45:00Z'
+            }
+        ]
+        
+        for notification in sample_notifications:
+            self.notifications[notification['id']] = notification
     
     def send_notification(self, notification_data: Dict[str, Any]) -> Dict[str, Any]:
         """Send a notification"""

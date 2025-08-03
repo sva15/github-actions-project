@@ -19,6 +19,7 @@ class AnalyticsService:
         # In a real application, this would connect to a database
         self.events = []
         self.metrics = defaultdict(list)
+        self._initialize_sample_data()
     
     def get_current_time(self) -> str:
         """Get current timestamp"""
@@ -41,9 +42,7 @@ class AnalyticsService:
                 'user_id': event_data['user_id'],
                 'properties': event_data.get('properties', {}),
                 'timestamp': datetime.utcnow().isoformat(),
-                'session_id': event_data.get('session_id'),
-                'device_type': event_data.get('device_type', 'unknown'),
-                'platform': event_data.get('platform', 'unknown')
+                'session_id': event_data.get('session_id')
             }
             
             self.events.append(event)
@@ -95,11 +94,11 @@ class AnalyticsService:
             # Event counts by name
             event_counts = Counter(e['event_name'] for e in filtered_events)
             
-            # Device type distribution
-            device_distribution = Counter(e['device_type'] for e in filtered_events)
+            # Device distribution
+            device_distribution = Counter(e.get('properties', {}).get('device', 'unknown') for e in filtered_events)
             
             # Platform distribution
-            platform_distribution = Counter(e['platform'] for e in filtered_events)
+            platform_distribution = Counter(e.get('properties', {}).get('platform', 'unknown') for e in filtered_events)
             
             # Events by hour (last 24 hours)
             now = datetime.utcnow()
@@ -165,8 +164,8 @@ class AnalyticsService:
             total_sessions = len(sessions)
             
             # Device and platform usage
-            devices_used = list(set(e['device_type'] for e in user_events))
-            platforms_used = list(set(e['platform'] for e in user_events))
+            devices_used = list(set(e.get('properties', {}).get('device', 'unknown') for e in user_events))
+            platforms_used = list(set(e.get('properties', {}).get('platform', 'unknown') for e in user_events))
             
             # Activity by day of week
             day_activity = defaultdict(int)
@@ -291,6 +290,65 @@ class AnalyticsService:
                     'error': str(e)
                 })
             }
+    
+    def _initialize_sample_data(self):
+        """Initialize with sample analytics data for demo"""
+        # Sample events
+        sample_events = [
+            {
+                'id': '1',
+                'event_name': 'page_view',
+                'user_id': '1',
+                'timestamp': '2024-02-01T10:00:00',
+                'properties': {'page': '/dashboard', 'device': 'desktop'},
+                'session_id': 'session_1'
+            },
+            {
+                'id': '2',
+                'event_name': 'button_click',
+                'user_id': '1', 
+                'timestamp': '2024-02-01T10:05:00',
+                'properties': {'button': 'refresh', 'device': 'desktop'},
+                'session_id': 'session_1'
+            },
+            {
+                'id': '3',
+                'event_name': 'page_view',
+                'user_id': '2',
+                'timestamp': '2024-02-01T11:00:00',
+                'properties': {'page': '/users', 'device': 'mobile'},
+                'session_id': 'session_2'
+            },
+            {
+                'id': '4',
+                'event_name': 'form_submit',
+                'user_id': '2',
+                'timestamp': '2024-02-01T11:15:00',
+                'properties': {'form': 'user_create', 'device': 'mobile'},
+                'session_id': 'session_2'
+            },
+            {
+                'id': '5',
+                'event_name': 'user_signup',
+                'user_id': '3',
+                'timestamp': '2024-02-01T14:30:00',
+                'properties': {'source': 'organic', 'device': 'tablet'},
+                'session_id': 'session_3'
+            }
+        ]
+        
+        self.events.extend(sample_events)
+        
+        # Sample metrics
+        sample_metrics = [
+            {'metric_name': 'response_time', 'value': 120.5, 'timestamp': '2024-02-01T10:00:00', 'unit': 'ms'},
+            {'metric_name': 'response_time', 'value': 95.2, 'timestamp': '2024-02-01T11:00:00', 'unit': 'ms'},
+            {'metric_name': 'cpu_usage', 'value': 45.8, 'timestamp': '2024-02-01T10:00:00', 'unit': 'percent'},
+            {'metric_name': 'memory_usage', 'value': 62.3, 'timestamp': '2024-02-01T10:00:00', 'unit': 'percent'}
+        ]
+        
+        for metric in sample_metrics:
+            self.metrics[metric['metric_name']].append(metric)
 
 # Initialize service
 analytics_service = AnalyticsService()
@@ -379,10 +437,10 @@ if __name__ == "__main__":
         'user_id': 'user123',
         'properties': {
             'page': '/dashboard',
-            'referrer': 'google.com'
-        },
-        'device_type': 'desktop',
-        'platform': 'web'
+            'referrer': 'google.com',
+            'device': 'desktop',
+            'platform': 'web'
+        }
     }
     
     # Test track event
