@@ -188,20 +188,6 @@ export class AnalyticsService {
     );
   }
 
-  getDashboardData(): Observable<any> {
-    // Get dashboard summary data
-    return this.getEventAnalytics().pipe(
-      map(analytics => ({
-        totalEvents: analytics.total_events,
-        uniqueUsers: analytics.unique_users,
-        eventCounts: analytics.event_counts,
-        deviceDistribution: analytics.device_distribution,
-        platformDistribution: analytics.platform_distribution,
-        hourlyEvents: analytics.hourly_events_24h
-      }))
-    );
-  }
-
   private getMockEventAnalytics(): EventAnalytics {
     return {
       total_events: 1250,
