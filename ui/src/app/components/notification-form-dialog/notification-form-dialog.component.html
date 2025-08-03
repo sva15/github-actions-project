@@ -1,0 +1,51 @@
+<h2 mat-dialog-title>{{ isEditMode ? 'Edit' : 'Create' }} Notification</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="notificationForm" class="notification-form">
+    <mat-form-field class="full-width">
+      <mat-label>Title</mat-label>
+      <input matInput formControlName="title" placeholder="Enter notification title">
+      <mat-error *ngIf="notificationForm.get('title')?.invalid && notificationForm.get('title')?.touched">
+        {{ getErrorMessage('title') }}
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field class="full-width">
+      <mat-label>Message</mat-label>
+      <textarea matInput formControlName="message" rows="4" placeholder="Enter notification message"></textarea>
+      <mat-error *ngIf="notificationForm.get('message')?.invalid && notificationForm.get('message')?.touched">
+        {{ getErrorMessage('message') }}
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field class="full-width">
+      <mat-label>Type</mat-label>
+      <mat-select formControlName="type">
+        <mat-option *ngFor="let type of notificationTypes" [value]="type">
+          {{ type | titlecase }}
+        </mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field class="full-width">
+      <mat-label>Recipients</mat-label>
+      <input matInput formControlName="recipients" placeholder="Enter recipients (comma-separated)">
+      <mat-hint>Separate multiple recipients with commas</mat-hint>
+      <mat-error *ngIf="notificationForm.get('recipients')?.invalid && notificationForm.get('recipients')?.touched">
+        {{ getErrorMessage('recipients') }}
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field class="full-width">
+      <mat-label>Scheduled Time (Optional)</mat-label>
+      <input matInput type="datetime-local" formControlName="scheduled_time">
+    </mat-form-field>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="notificationForm.invalid">
+    {{ isEditMode ? 'Update' : 'Create' }}
+  </button>
+</mat-dialog-actions>

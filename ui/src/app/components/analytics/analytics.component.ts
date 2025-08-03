@@ -87,9 +87,9 @@ export class AnalyticsComponent implements OnInit {
     
     // Track page view
     this.analyticsService.trackEvent({
-      event_type: 'page_view',
-      page: 'analytics',
-      user_id: 'current_user'
+      event_name: 'page_view',
+      user_id: 'current_user',
+      properties: { page: 'analytics' }
     }).subscribe();
   }
 
@@ -160,7 +160,7 @@ export class AnalyticsComponent implements OnInit {
         },
         {
           id: '3',
-          event_type: 'page_view',
+          event_name: 'page_view',
           user_id: 'user_789',
           timestamp: new Date(Date.now() - 900000),
           metadata: { page: '/dashboard', referrer: 'google.com' }
@@ -424,9 +424,9 @@ export class AnalyticsComponent implements OnInit {
     
     // Track export event
     this.analyticsService.trackEvent({
-      event_type: 'data_export',
-      export_type: 'analytics',
-      user_id: 'current_user'
+      event_name: 'data_export',
+      user_id: 'current_user',
+      properties: { export_type: 'analytics' }
     }).subscribe();
     
     this.snackBar.open('Analytics data exported successfully!', 'Close', { duration: 3000 });

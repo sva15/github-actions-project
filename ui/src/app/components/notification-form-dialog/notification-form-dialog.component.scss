@@ -1,0 +1,30 @@
+.notification-form {
+  display: flex;
+  flex-direction: column;
+  min-width: 400px;
+  padding: 20px 0;
+}
+
+.full-width {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+mat-dialog-content {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+mat-dialog-actions {
+  padding: 16px 0 0 0;
+  gap: 8px;
+}
+
+.mat-mdc-form-field {
+  margin-bottom: 16px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}

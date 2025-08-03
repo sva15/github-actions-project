@@ -192,6 +192,26 @@ export class UserManagementComponent implements OnInit {
     window.URL.revokeObjectURL(url);
   }
 
+  getTodayUsersCount(): number {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return this.dataSource.data.filter(user => {
+      const userDate = new Date(user.created_at);
+      userDate.setHours(0, 0, 0, 0);
+      return userDate.getTime() === today.getTime();
+    }).length;
+  }
+
+  getThisWeekUsersCount(): number {
+    const today = new Date();
+    const weekStart = new Date(today.setDate(today.getDate() - today.getDay()));
+    weekStart.setHours(0, 0, 0, 0);
+    return this.dataSource.data.filter(user => {
+      const userDate = new Date(user.created_at);
+      return userDate >= weekStart;
+    }).length;
+  }
+
   private showSnackBar(message: string, type: 'success' | 'error' | 'info'): void {
     const config = {
       duration: 3000,

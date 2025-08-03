@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, throwError, OperatorFunction } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
@@ -20,7 +20,9 @@ export interface Notification {
 export interface SendNotificationRequest {
   recipient: string;
   type: 'email' | 'sms' | 'push';
-  template: string;
+  subject?: string;
+  message: string;
+  template?: string;
   variables?: { [key: string]: any };
 }
 
@@ -67,9 +69,9 @@ export class NotificationService {
   }
 
   getNotificationsByRecipient(recipient: string): Observable<Notification[]> {
-    return this.http.get<NotificationApiResponse<Notification[]>>(`${this.baseUrl}?recipient=${recipient}`)
+    return this.http.get<NotificationApiResponse<Notification>>(`${this.baseUrl}?recipient=${recipient}`)
       .pipe(
-        map(response => {
+        map((response): Notification[] => {
           if (response.notifications) {
             return response.notifications;
           }
@@ -80,9 +82,9 @@ export class NotificationService {
   }
 
   getAllNotifications(): Observable<Notification[]> {
-    return this.http.get<NotificationApiResponse<Notification[]>>(this.baseUrl)
+    return this.http.get<NotificationApiResponse<Notification>>(this.baseUrl)
       .pipe(
-        map(response => {
+        map((response): Notification[] => {
           // For demo purposes, return mock data if no backend
           if (environment.production === false) {
             return this.getMockNotifications();

@@ -78,9 +78,9 @@ export class NotificationCenterComponent implements OnInit {
     
     // Track page view
     this.analyticsService.trackEvent({
-      event_type: 'page_view',
-      page: 'notification_center',
-      user_id: 'current_user'
+      event_name: 'page_view',
+      user_id: 'current_user',
+      properties: { page: 'notification_center' }
     }).subscribe();
   }
 
@@ -168,11 +168,11 @@ export class NotificationCenterComponent implements OnInit {
     });
     
     // Custom filter predicate
-    this.dataSource.filterPredicate = (data: Notification, filter: string) => {
+    this.dataSource.filterPredicate = (data: Notification, filter: string): boolean => {
       const searchTerm = filter.toLowerCase();
       return data.recipient.toLowerCase().includes(searchTerm) ||
              data.message.toLowerCase().includes(searchTerm) ||
-             (data.subject && data.subject.toLowerCase().includes(searchTerm));
+             (data.subject ? data.subject.toLowerCase().includes(searchTerm) : false);
     };
   }
 
@@ -204,9 +204,9 @@ export class NotificationCenterComponent implements OnInit {
         
         // Track event
         this.analyticsService.trackEvent({
-          event_type: 'notification_sent',
-          notification_type: this.newNotification.type,
-          user_id: 'current_user'
+          event_name: 'notification_sent',
+          user_id: 'current_user',
+          properties: { notification_type: this.newNotification.type }
         }).subscribe();
       },
       error: (error) => {
@@ -258,9 +258,9 @@ export class NotificationCenterComponent implements OnInit {
     
     // Track export event
     this.analyticsService.trackEvent({
-      event_type: 'data_export',
-      export_type: 'notifications',
-      user_id: 'current_user'
+      event_name: 'data_export',
+      user_id: 'current_user',
+      properties: { export_type: 'notifications' }
     }).subscribe();
   }
 
