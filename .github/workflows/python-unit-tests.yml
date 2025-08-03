@@ -82,12 +82,12 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     
     - name: Publish Code Coverage Report
-      uses: dorny/test-reporter@v1
+      uses: dorny/test-reporter@v2
       with:
         name: Code Coverage Report
         path: ./calculator-project/coverage.xml
-        reporter: jest-junit
-
+        reporter: java-junit
+        
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
       uses: sonarsource/sonarqube-quality-gate-action@master
