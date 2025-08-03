@@ -5,7 +5,7 @@
 
 set -e
 
-LOG_FILE="/var/log/mono-repo-ui-deploy.log"
+LOG_FILE="/var/log/cloudsync-platform-deploy.log"
 
 # Logging function
 log() {
@@ -21,7 +21,7 @@ MAX_ATTEMPTS=30
 ATTEMPT_INTERVAL=10
 
 # Change to deployment directory
-cd /opt/mono-repo-ui
+cd /opt/cloudsync-platform
 
 # Function to check if application is responding
 check_health() {
@@ -40,7 +40,7 @@ validate_app_response() {
     local response=$(curl -s --max-time 10 "$APP_URL" 2>/dev/null)
     
     # Check if response contains expected content
-    if echo "$response" | grep -q "mono-repo" || echo "$response" | grep -q "<!doctype html>"; then
+    if echo "$response" | grep -q "cloudsync" || echo "$response" | grep -q "<!doctype html>"; then
         return 0
     else
         return 1
@@ -49,7 +49,7 @@ validate_app_response() {
 
 # Function to check container health
 check_container_health() {
-    local container_name="mono-repo-ui"
+    local container_name="cloudsync-platform"
     
     # Get container status
     local container_status=$(docker ps --filter "name=$container_name" --format "{{.Status}}" | head -n1)
@@ -106,8 +106,8 @@ run_validation_tests() {
     
     # Test 5: Resource usage check
     log "Test 5/5: Resource usage check"
-    local cpu_usage=$(docker stats --no-stream --format "{{.CPUPerc}}" mono-repo-ui 2>/dev/null | sed 's/%//' || echo "0")
-    local mem_usage=$(docker stats --no-stream --format "{{.MemPerc}}" mono-repo-ui 2>/dev/null | sed 's/%//' || echo "0")
+    local cpu_usage=$(docker stats --no-stream --format "{{.CPUPerc}}" cloudsync-platform 2>/dev/null | sed 's/%//' || echo "0")
+    local mem_usage=$(docker stats --no-stream --format "{{.MemPerc}}" cloudsync-platform 2>/dev/null | sed 's/%//' || echo "0")
     
     if (( $(echo "$cpu_usage < 80" | bc -l) )) && (( $(echo "$mem_usage < 80" | bc -l) )); then
         log "✓ Resource usage is within acceptable limits (CPU: ${cpu_usage}%, Memory: ${mem_usage}%)"
@@ -148,13 +148,13 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         
         # Container logs
         log "Container logs (last 50 lines):"
-        docker logs --tail=50 $(docker ps -q --filter "name=mono-repo-ui") 2>&1 | while read line; do
+        docker logs --tail=50 $(docker ps -q --filter "name=cloudsync-platform") 2>&1 | while read line; do
             log "CONTAINER: $line"
         done
         
         # Container status
         log "Container status:"
-        docker ps --filter "name=mono-repo-ui" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | while read line; do
+        docker ps --filter "name=cloudsync-platform" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | while read line; do
             log "STATUS: $line"
         done
         
@@ -212,12 +212,12 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > last-successful-deployment.txt
 # Send success notification (if configured)
 if [ ! -z "$SLACK_WEBHOOK_URL" ]; then
     curl -X POST -H 'Content-type: application/json' \
-        --data "{\"text\":\"✅ mono-repo-ui validation completed successfully\nEnvironment: $ENVIRONMENT\nBuild: $(cat current-build.txt 2>/dev/null || echo 'unknown')\"}" \
+        --data "{\"text\":\"✅ CloudSync Platform validation completed successfully\nEnvironment: $ENVIRONMENT\nBuild: $(cat current-build.txt 2>/dev/null || echo 'unknown')\"}" \
         $SLACK_WEBHOOK_URL || log "Failed to send Slack notification"
 fi
 
 # Start nginx if it was stopped and configuration exists
-if [ -f "/etc/nginx/sites-available/mono-repo-ui" ] && ! systemctl is-active --quiet nginx; then
+if [ -f "/etc/nginx/sites-available/cloudsync-platform" ] && ! systemctl is-active --quiet nginx; then
     log "Starting nginx..."
     systemctl start nginx || log "Failed to start nginx"
 fi

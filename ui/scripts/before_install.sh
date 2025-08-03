@@ -5,7 +5,7 @@
 
 set -e
 
-LOG_FILE="/var/log/mono-repo-ui-deploy.log"
+LOG_FILE="/var/log/cloudsync-platform-deploy.log"
 
 # Logging function
 log() {
@@ -51,13 +51,13 @@ usermod -a -G docker ec2-user
 
 # Create application directory
 log "Creating application directory..."
-mkdir -p /opt/mono-repo-ui
-chown -R ec2-user:ec2-user /opt/mono-repo-ui
+mkdir -p /opt/cloudsync-platform
+chown -R ec2-user:ec2-user /opt/cloudsync-platform
 
 # Create log directory
 log "Creating log directory..."
-mkdir -p /var/log/mono-repo-ui
-chown -R ec2-user:ec2-user /var/log/mono-repo-ui
+mkdir -p /var/log/cloudsync-platform
+chown -R ec2-user:ec2-user /var/log/cloudsync-platform
 
 # Set up environment variables
 log "Setting up environment variables..."
@@ -72,8 +72,8 @@ source /etc/environment
 
 # Clean up any existing containers with the same name
 log "Cleaning up existing containers..."
-docker stop mono-repo-ui-* 2>/dev/null || true
-docker rm mono-repo-ui-* 2>/dev/null || true
+docker stop cloudsync-platform-* 2>/dev/null || true
+docker rm cloudsync-platform-* 2>/dev/null || true
 
 # Pull base images to speed up deployment
 log "Pre-pulling base images..."
@@ -81,8 +81,8 @@ docker pull nginx:alpine || log "Failed to pre-pull nginx image"
 
 # Set up log rotation
 log "Setting up log rotation..."
-cat > /etc/logrotate.d/mono-repo-ui << EOF
-/var/log/mono-repo-ui/*.log {
+cat > /etc/logrotate.d/cloudsync-platform << EOF
+/var/log/cloudsync-platform/*.log {
     daily
     missingok
     rotate 7
@@ -92,7 +92,7 @@ cat > /etc/logrotate.d/mono-repo-ui << EOF
     create 644 ec2-user ec2-user
 }
 
-/var/log/mono-repo-ui-deploy.log {
+/var/log/cloudsync-platform-deploy.log {
     daily
     missingok
     rotate 30
@@ -113,7 +113,7 @@ fi
 
 # Create health check endpoint script
 log "Creating health check script..."
-cat > /opt/mono-repo-ui/health-check.sh << 'EOF'
+cat > /opt/cloudsync-platform/health-check.sh << 'EOF'
 #!/bin/bash
 # Health check script for the application
 
@@ -136,8 +136,8 @@ echo "Health check failed after $MAX_ATTEMPTS attempts"
 exit 1
 EOF
 
-chmod +x /opt/mono-repo-ui/health-check.sh
-chown ec2-user:ec2-user /opt/mono-repo-ui/health-check.sh
+chmod +x /opt/cloudsync-platform/health-check.sh
+chown ec2-user:ec2-user /opt/cloudsync-platform/health-check.sh
 
 log "Before install hook completed successfully"
 

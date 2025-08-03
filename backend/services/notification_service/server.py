@@ -5,6 +5,7 @@ Provides REST API endpoints for Docker container deployment
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
+import json
 from main import NotificationService
 
 # Configure logging
@@ -35,9 +36,11 @@ def send_notification():
         result = notification_service.send_notification(data)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error sending notification: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -50,9 +53,11 @@ def get_notifications():
         result = notification_service.get_notifications(filters)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting notifications: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -64,9 +69,11 @@ def get_notification(notification_id):
         result = notification_service.get_notification(notification_id)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting notification: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -79,9 +86,11 @@ def update_notification_status(notification_id):
         result = notification_service.update_notification_status(notification_id, data.get('status'))
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error updating notification status: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -93,9 +102,11 @@ def get_templates():
         result = notification_service.get_templates()
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting templates: {str(e)}")
         return jsonify({'error': str(e)}), 500

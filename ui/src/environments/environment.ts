@@ -1,9 +1,8 @@
 export const environment = {
   production: false,
-  apiUrl: 'http://localhost:3000/api',
-  // For local development, you can point to your local backend services
-  // or use the deployed cloud functions/lambda endpoints
-  userServiceUrl: 'http://localhost:3001',
-  notificationServiceUrl: 'http://localhost:3002',
-  analyticsServiceUrl: 'http://localhost:3003'
+  apiUrl: 'http://user-service:8080', // Point to user service for main API
+  // Direct service URLs for microservices architecture (Docker internal network)
+  userServiceUrl: 'http://user-service:8080',
+  notificationServiceUrl: 'http://notification-service:8080',
+  analyticsServiceUrl: 'http://analytics-service:8080'
 };

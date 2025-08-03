@@ -5,7 +5,7 @@
 
 set -e
 
-LOG_FILE="/var/log/mono-repo-ui-deploy.log"
+LOG_FILE="/var/log/cloudsync-platform-deploy.log"
 
 # Logging function
 log() {
@@ -15,11 +15,11 @@ log() {
 log "Starting after_install hook"
 
 # Change to deployment directory
-cd /opt/mono-repo-ui
+cd /opt/cloudsync-platform
 
 # Set correct permissions
 log "Setting file permissions..."
-chown -R ec2-user:ec2-user /opt/mono-repo-ui
+chown -R ec2-user:ec2-user /opt/cloudsync-platform
 chmod +x deploy.sh
 
 # Validate deployment files
@@ -87,13 +87,13 @@ if [ "$ENABLE_MONITORING" = "true" ]; then
             "files": {
                 "collect_list": [
                     {
-                        "file_path": "/var/log/mono-repo-ui-deploy.log",
-                        "log_group_name": "/aws/ec2/mono-repo-ui/deployment",
+                        "file_path": "/var/log/cloudsync-platform-deploy.log",
+                        "log_group_name": "/aws/ec2/cloudsync-platform/deployment",
                         "log_stream_name": "{instance_id}-deployment"
                     },
                     {
-                        "file_path": "/var/log/mono-repo-ui/*.log",
-                        "log_group_name": "/aws/ec2/mono-repo-ui/application",
+                        "file_path": "/var/log/cloudsync-platform/*.log",
+                        "log_group_name": "/aws/ec2/cloudsync-platform/application",
                         "log_stream_name": "{instance_id}-application"
                     }
                 ]
@@ -144,7 +144,7 @@ fi
 if command -v nginx &> /dev/null; then
     log "Configuring nginx reverse proxy..."
     
-    cat > /etc/nginx/sites-available/mono-repo-ui << EOF
+    cat > /etc/nginx/sites-available/cloudsync-platform << EOF
 server {
     listen 80;
     server_name _;
@@ -174,7 +174,7 @@ server {
 EOF
     
     # Enable the site
-    ln -sf /etc/nginx/sites-available/mono-repo-ui /etc/nginx/sites-enabled/
+    ln -sf /etc/nginx/sites-available/cloudsync-platform /etc/nginx/sites-enabled/
     
     # Test nginx configuration
     nginx -t || log "Nginx configuration test failed"

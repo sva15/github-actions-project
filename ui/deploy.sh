@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# Deploy script for mono-repo-ui on EC2 with CodeDeploy
+# Deploy script for CloudSync Platform UI on EC2 with CodeDeploy
 # This script handles the deployment of the Angular application using Docker
 
 set -e
 
 # Configuration
-APP_NAME="mono-repo-ui"
-DEPLOYMENT_DIR="/opt/mono-repo-ui"
+APP_NAME="cloudsync-platform-ui"
+DEPLOYMENT_DIR="/opt/cloudsync-platform"
 DOCKER_COMPOSE_FILE="$DEPLOYMENT_DIR/docker-compose.yml"
 ENV_FILE="$DEPLOYMENT_DIR/.env"
-LOG_FILE="/var/log/mono-repo-ui-deploy.log"
+LOG_FILE="/var/log/cloudsync-platform-deploy.log"
 
 # Logging function
 log() {

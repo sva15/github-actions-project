@@ -5,6 +5,7 @@ Provides REST API endpoints for Docker container deployment
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
+import json
 from main import UserService
 
 # Configure logging
@@ -34,9 +35,11 @@ def get_users():
         result = user_service.get_users()
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting users: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -63,9 +66,11 @@ def get_user(user_id):
         result = user_service.get_user(user_id)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting user: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -78,9 +83,11 @@ def update_user(user_id):
         result = user_service.update_user(user_id, data)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error updating user: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -92,9 +99,11 @@ def delete_user(user_id):
         result = user_service.delete_user(user_id)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error deleting user: {str(e)}")
         return jsonify({'error': str(e)}), 500

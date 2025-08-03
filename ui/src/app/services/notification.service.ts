@@ -38,7 +38,7 @@ export interface NotificationApiResponse<T> {
   providedIn: 'root'
 })
 export class NotificationService {
-  private readonly baseUrl = environment.apiUrl + '/notifications';
+  private readonly baseUrl = environment.notificationServiceUrl + '/notifications';
 
   constructor(private http: HttpClient) {}
 

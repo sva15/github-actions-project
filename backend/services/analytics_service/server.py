@@ -5,6 +5,7 @@ Provides REST API endpoints for Docker container deployment
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
+import json
 from main import AnalyticsService
 
 # Configure logging
@@ -35,9 +36,11 @@ def track_event():
         result = analytics_service.track_event(data)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error tracking event: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -50,9 +53,11 @@ def get_analytics():
         result = analytics_service.get_event_analytics(filters)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting analytics: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -64,9 +69,11 @@ def get_user_analytics(user_id):
         result = analytics_service.get_user_analytics(user_id)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting user analytics: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -79,9 +86,11 @@ def record_metric():
         result = analytics_service.record_metric(data)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error recording metric: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -93,9 +102,11 @@ def get_metric_stats(metric_name):
         result = analytics_service.get_metric_stats(metric_name)
         
         if result['statusCode'] == 200:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), 200
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), 200
         else:
-            return jsonify(result['body'] if isinstance(result['body'], dict) else eval(result['body'])), result['statusCode']
+            body = json.loads(result['body']) if isinstance(result['body'], str) else result['body']
+            return jsonify(body), result['statusCode']
     except Exception as e:
         logger.error(f"Error getting metric stats: {str(e)}")
         return jsonify({'error': str(e)}), 500

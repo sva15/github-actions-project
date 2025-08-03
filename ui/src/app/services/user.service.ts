@@ -32,7 +32,7 @@ export interface ApiResponse<T> {
   providedIn: 'root'
 })
 export class UserService {
-  private readonly baseUrl = environment.apiUrl + '/users';
+  private readonly baseUrl = environment.userServiceUrl + '/users';
 
   constructor(private http: HttpClient) {}
 

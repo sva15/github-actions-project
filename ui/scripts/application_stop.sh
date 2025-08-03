@@ -5,7 +5,7 @@
 
 set -e
 
-LOG_FILE="/var/log/mono-repo-ui-deploy.log"
+LOG_FILE="/var/log/cloudsync-platform-deploy.log"
 
 # Logging function
 log() {
@@ -15,7 +15,7 @@ log() {
 log "Starting application_stop hook"
 
 # Change to deployment directory
-cd /opt/mono-repo-ui
+cd /opt/cloudsync-platform
 
 # Function to gracefully stop containers
 stop_containers() {
@@ -28,8 +28,8 @@ stop_containers() {
         log "No docker-compose.yml found, stopping containers manually..."
     fi
     
-    # Stop any running mono-repo-ui containers
-    RUNNING_CONTAINERS=$(docker ps -q --filter "name=mono-repo-ui")
+    # Stop any running cloudsync-platform containers
+    RUNNING_CONTAINERS=$(docker ps -q --filter "name=cloudsync-platform")
     if [ ! -z "$RUNNING_CONTAINERS" ]; then
         log "Stopping running containers: $RUNNING_CONTAINERS"
         docker stop $RUNNING_CONTAINERS --time 30 || log "Failed to stop some containers"
@@ -91,8 +91,8 @@ if is_app_running; then
         
         # Force stop any remaining containers
         log "Force stopping remaining containers..."
-        docker ps -q --filter "name=mono-repo-ui" | xargs -r docker kill
-        docker ps -aq --filter "name=mono-repo-ui" | xargs -r docker rm -f
+        docker ps -q --filter "name=cloudsync-platform" | xargs -r docker kill
+        docker ps -aq --filter "name=cloudsync-platform" | xargs -r docker rm -f
     else
         log "Application stopped successfully"
     fi
@@ -114,11 +114,11 @@ docker image prune -a -f --filter "until=168h" || log "Failed to prune old image
 log "Stopping related services..."
 
 # Stop log forwarding services if running
-pkill -f "tail.*mono-repo-ui" || true
+pkill -f "tail.*cloudsync-platform" || true
 
 # Clear any application caches
 log "Clearing application caches..."
-rm -rf /tmp/mono-repo-ui-* || true
+rm -rf /tmp/cloudsync-platform-* || true
 
 # Update deployment status
 cat > deployment-status.json << EOF

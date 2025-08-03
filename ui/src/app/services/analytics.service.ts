@@ -82,7 +82,7 @@ export interface AnalyticsApiResponse<T> {
   providedIn: 'root'
 })
 export class AnalyticsService {
-  private readonly baseUrl = environment.apiUrl + '/analytics';
+  private readonly baseUrl = environment.analyticsServiceUrl;
 
   constructor(private http: HttpClient) {}
 
@@ -176,6 +176,20 @@ export class AnalyticsService {
 
   getDashboardData(): Observable<any> {
     // Combine multiple analytics calls for dashboard
+    return this.getEventAnalytics().pipe(
+      map(analytics => ({
+        totalEvents: analytics.total_events,
+        uniqueUsers: analytics.unique_users,
+        eventCounts: analytics.event_counts,
+        deviceDistribution: analytics.device_distribution,
+        platformDistribution: analytics.platform_distribution,
+        hourlyEvents: analytics.hourly_events_24h
+      }))
+    );
+  }
+
+  getDashboardData(): Observable<any> {
+    // Get dashboard summary data
     return this.getEventAnalytics().pipe(
       map(analytics => ({
         totalEvents: analytics.total_events,
