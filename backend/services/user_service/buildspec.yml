@@ -1,0 +1,98 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing dependencies..."
+      - pip install --upgrade pip
+      - pip install -r requirements.txt
+      - pip install pytest pytest-cov awscli
+
+  pre_build:
+    commands:
+      - echo "Running pre-build phase..."
+      - echo "Running unit tests..."
+      - python -m pytest test_main.py -v --cov=main --cov-report=term
+      - echo "Tests completed successfully"
+
+  build:
+    commands:
+      - echo "Build phase started on `date`"
+      - echo "Creating deployment package..."
+      
+      # Create deployment directory
+      - mkdir -p deployment
+      
+      # Copy application files
+      - cp main.py deployment/
+      - cp requirements.txt deployment/
+      
+      # Install dependencies in deployment directory
+      - pip install -r requirements.txt -t deployment/
+      
+      # Create deployment package
+      - cd deployment
+      - zip -r ../user-service-deployment.zip .
+      - cd ..
+      
+      # Upload to S3 for Lambda deployment
+      - aws s3 cp user-service-deployment.zip s3://$DEPLOYMENT_BUCKET/lambda-packages/user-service-${CODEBUILD_BUILD_NUMBER}.zip
+      
+      echo "Build completed on `date`"
+
+  post_build:
+    commands:
+      - echo "Post-build phase started on `date`"
+      
+      # Deploy to Lambda
+      - |
+        aws lambda update-function-code \
+          --function-name user-service-${ENVIRONMENT} \
+          --s3-bucket $DEPLOYMENT_BUCKET \
+          --s3-key lambda-packages/user-service-${CODEBUILD_BUILD_NUMBER}.zip \
+          --region $AWS_DEFAULT_REGION || \
+        aws lambda create-function \
+          --function-name user-service-${ENVIRONMENT} \
+          --runtime python3.9 \
+          --role $LAMBDA_EXECUTION_ROLE \
+          --handler main.lambda_handler \
+          --code S3Bucket=$DEPLOYMENT_BUCKET,S3Key=lambda-packages/user-service-${CODEBUILD_BUILD_NUMBER}.zip \
+          --timeout 30 \
+          --memory-size 256 \
+          --environment Variables="{ENVIRONMENT=${ENVIRONMENT}}" \
+          --region $AWS_DEFAULT_REGION
+      
+      # Update function configuration
+      - |
+        aws lambda update-function-configuration \
+          --function-name user-service-${ENVIRONMENT} \
+          --timeout 30 \
+          --memory-size 256 \
+          --environment Variables="{ENVIRONMENT=${ENVIRONMENT}}" \
+          --region $AWS_DEFAULT_REGION
+      
+      # Create or update API Gateway integration (if needed)
+      - echo "Checking API Gateway integration..."
+      
+      echo "Post-build completed on `date`"
+
+artifacts:
+  files:
+    - user-service-deployment.zip
+    - main.py
+    - requirements.txt
+  name: user-service-artifacts-${CODEBUILD_BUILD_NUMBER}
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'
+
+env:
+  variables:
+    PYTHONPATH: "/codebuild/output/src*/deployment"
+  parameter-store:
+    DEPLOYMENT_BUCKET: "/mono-repo/deployment-bucket"
+    LAMBDA_EXECUTION_ROLE: "/mono-repo/lambda-execution-role-arn"
+    ENVIRONMENT: "/mono-repo/environment"

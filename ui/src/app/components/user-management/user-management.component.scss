@@ -1,0 +1,218 @@
+.user-management-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+
+  h2 {
+    margin: 0;
+    color: #333;
+  }
+
+  button {
+    mat-icon {
+      margin-right: 8px;
+    }
+  }
+}
+
+.filters-card {
+  margin-bottom: 20px;
+
+  .filters-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+
+    mat-form-field {
+      min-width: 200px;
+      flex: 1;
+
+      @media (max-width: 768px) {
+        min-width: 150px;
+      }
+    }
+
+    button {
+      white-space: nowrap;
+      
+      mat-icon {
+        margin-right: 8px;
+      }
+    }
+  }
+}
+
+.table-card {
+  .table-container {
+    position: relative;
+    min-height: 400px;
+
+    .users-table {
+      width: 100%;
+
+      .avatar-cell {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .user-avatar {
+          width: 40px;
+          height: 40px;
+          background-color: #2196f3;
+          color: white;
+          font-weight: 500;
+        }
+
+        .user-info {
+          .user-name {
+            font-weight: 500;
+            color: #333;
+            display: block;
+          }
+
+          .user-email {
+            color: #666;
+            font-size: 12px;
+          }
+        }
+      }
+
+      .status-cell {
+        mat-chip {
+          &.active {
+            background-color: #e8f5e8;
+            color: #4caf50;
+          }
+
+          &.inactive {
+            background-color: #ffebee;
+            color: #f44336;
+          }
+        }
+      }
+
+      .actions-cell {
+        display: flex;
+        gap: 4px;
+
+        button {
+          mat-icon {
+            font-size: 18px;
+            width: 18px;
+            height: 18px;
+          }
+        }
+      }
+    }
+
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      color: #666;
+
+      mat-spinner {
+        margin-bottom: 20px;
+      }
+
+      p {
+        margin: 0;
+        font-size: 16px;
+      }
+    }
+
+    .no-data-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      color: #666;
+      text-align: center;
+
+      mat-icon {
+        font-size: 48px;
+        width: 48px;
+        height: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+      }
+
+      h3 {
+        margin: 0 0 8px 0;
+        color: #333;
+      }
+
+      p {
+        margin: 0;
+        color: #666;
+      }
+    }
+  }
+
+  mat-paginator {
+    border-top: 1px solid #e0e0e0;
+    background-color: #fafafa;
+  }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  .user-management-container {
+    padding: 16px;
+  }
+
+  .header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+
+    button {
+      align-self: center;
+    }
+  }
+
+  .filters-card .filters-row {
+    flex-direction: column;
+    align-items: stretch;
+
+    mat-form-field {
+      min-width: unset;
+    }
+  }
+
+  .table-card .table-container .users-table {
+    font-size: 14px;
+
+    .avatar-cell {
+      .user-avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+      }
+
+      .user-info .user-email {
+        display: none;
+      }
+    }
+  }
+}
+
+// Animation for table rows
+.users-table tbody tr {
+  transition: background-color 0.2s ease-in-out;
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+}

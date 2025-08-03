@@ -1,0 +1,204 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.local
+.env.production
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Angular
+/ui/dist/
+/ui/tmp/
+/ui/out-tsc/
+/ui/bazel-out/
+
+# Angular dependencies
+/ui/node_modules
+
+# Angular profiling files
+/ui/chrome-profiler-events*.json
+/ui/speed-measure-plugin*.json
+
+# Angular IDEs and editors
+/ui/.idea
+/ui/.project
+/ui/.classpath
+/ui/.c9/
+/ui/*.launch
+/ui/.settings/
+/ui/*.sublime-workspace
+
+# Angular IDE - VSCode
+/ui/.vscode/*
+!/ui/.vscode/settings.json
+!/ui/.vscode/tasks.json
+!/ui/.vscode/launch.json
+!/ui/.vscode/extensions.json
+/ui/.history/*
+
+# Angular misc
+/ui/.sass-cache/
+/ui/connect.lock
+/ui/typings
+
+# Angular System Files
+/ui/.DS_Store
+/ui/Thumbs.db
+
+# Docker
+*.dockerignore
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# AWS
+.aws/
+
+# GCP
+*.json
+!package*.json
+!tsconfig*.json
+!angular.json
+
+# Deployment artifacts
+*.zip
+*.tar.gz
+deployment/
+lambda-*.zip
+
+# Security
+bandit-report.json
+safety-report.json
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/

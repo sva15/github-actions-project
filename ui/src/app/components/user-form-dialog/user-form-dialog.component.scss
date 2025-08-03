@@ -1,0 +1,71 @@
+.user-form-dialog {
+  min-width: 400px;
+  max-width: 500px;
+
+  @media (max-width: 600px) {
+    min-width: 300px;
+    max-width: 90vw;
+  }
+}
+
+.dialog-content {
+  padding: 20px 0;
+
+  .user-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    mat-form-field {
+      width: 100%;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+
+      @media (max-width: 600px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .error-message {
+      color: #f44336;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+  }
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 0 0 0;
+  border-top: 1px solid #e0e0e0;
+  margin-top: 20px;
+
+  button {
+    min-width: 80px;
+
+    mat-icon, mat-spinner {
+      margin-right: 8px;
+    }
+  }
+}
+
+// Form validation styling
+.mat-form-field {
+  &.mat-form-field-invalid {
+    .mat-form-field-outline-thick {
+      color: #f44336;
+    }
+  }
+}
+
+// Loading state
+.loading-button {
+  pointer-events: none;
+  opacity: 0.7;
+}

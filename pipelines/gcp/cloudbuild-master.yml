@@ -1,0 +1,448 @@
+# Master Cloud Build Pipeline
+# Single pipeline that dynamically detects and deploys changed services
+# Uses services-config.yml for service definitions and configurations
+
+steps:
+# Step 1: Setup environment and install dependencies
+- name: 'gcr.io/cloud-builders/git'
+  id: 'setup-environment'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "🔧 Setting up build environment..."
+    
+    # Install yq for YAML parsing
+    wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+    chmod +x /usr/local/bin/yq
+    
+    # Install jq for JSON parsing
+    apt-get update && apt-get install -y jq
+    
+    echo "✅ Environment setup complete"
+
+# Step 2: Detect changed services and determine environment
+- name: 'gcr.io/cloud-builders/git'
+  id: 'detect-changes'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "🔍 Detecting changed services and environment..."
+    
+    # Determine environment from branch
+    BRANCH_NAME=${BRANCH_NAME:-${_HEAD_BRANCH:-main}}
+    echo "Branch: $BRANCH_NAME"
+    
+    case $BRANCH_NAME in
+      "main")
+        ENV="prod"
+        ;;
+      "develop")
+        ENV="staging"
+        ;;
+      "feature/"*)
+        ENV="dev"
+        ;;
+      "hotfix/"*)
+        ENV="hotfix"
+        ;;
+      *)
+        ENV="dev"
+        ;;
+    esac
+    
+    echo "Environment: $ENV"
+    echo "$ENV" > /workspace/environment
+    
+    # Get changed files
+    if [ "$_TRIGGER_TYPE" = "manual" ]; then
+      echo "Manual trigger - deploying all services"
+      CHANGED_FILES="backend/services/ ui/"
+    else
+      echo "Auto trigger - detecting changes from git"
+      CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+      if [ -z "$CHANGED_FILES" ]; then
+        # Fallback for initial commit or shallow clone
+        CHANGED_FILES=$(git ls-files)
+      fi
+    fi
+    
+    echo "Changed files:"
+    echo "$CHANGED_FILES"
+    
+    # Parse services config and detect changes
+    CHANGED_SERVICES=""
+    
+    # Get all services from config
+    SERVICES=$(yq eval '.services | keys | .[]' services-config.yml)
+    
+    for SERVICE in $SERVICES; do
+      SERVICE_PATH=$(yq eval ".services.$SERVICE.path" services-config.yml)
+      
+      if echo "$CHANGED_FILES" | grep -q "$SERVICE_PATH/"; then
+        CHANGED_SERVICES="$CHANGED_SERVICES $SERVICE"
+        echo "✅ Service changed: $SERVICE (path: $SERVICE_PATH)"
+      fi
+    done
+    
+    if [ -z "$CHANGED_SERVICES" ]; then
+      echo "ℹ️ No services changed, skipping deployment"
+      echo "SKIP_DEPLOYMENT=true" > /workspace/deployment_status
+      echo "" > /workspace/changed_services
+    else
+      echo "🚀 Services to deploy: $CHANGED_SERVICES"
+      echo "$CHANGED_SERVICES" > /workspace/changed_services
+      echo "SKIP_DEPLOYMENT=false" > /workspace/deployment_status
+    fi
+    
+    echo "DEPLOYMENT_ENV=$ENV" >> /workspace/deployment_status
+
+# Step 3: Deploy Cloud Functions (Backend Services)
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'deploy-cloud-functions'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    source /workspace/deployment_status
+    
+    if [ "$SKIP_DEPLOYMENT" = "true" ]; then
+      echo "⏭️ Skipping Cloud Functions deployment - no changes detected"
+      exit 0
+    fi
+    
+    CHANGED_SERVICES=$(cat /workspace/changed_services)
+    ENV=$(cat /workspace/environment)
+    
+    echo "☁️ Deploying Cloud Functions for environment: $ENV"
+    
+    # Deploy each changed backend service
+    for SERVICE in $CHANGED_SERVICES; do
+      SERVICE_TYPE=$(yq eval ".services.$SERVICE.type" services-config.yml)
+      
+      if [ "$SERVICE_TYPE" = "cloud_function" ]; then
+        echo "🔧 Deploying Cloud Function: $SERVICE"
+        
+        # Get service configuration
+        SERVICE_PATH=$(yq eval ".services.$SERVICE.path" services-config.yml)
+        RUNTIME=$(yq eval ".services.$SERVICE.runtime" services-config.yml)
+        MEMORY=$(yq eval ".services.$SERVICE.memory" services-config.yml)
+        TIMEOUT=$(yq eval ".services.$SERVICE.timeout" services-config.yml)
+        ENTRY_POINT=$(yq eval ".services.$SERVICE.entry_point" services-config.yml)
+        
+        # Get environment-specific overrides
+        ENV_MEMORY=$(yq eval ".environments.$ENV.overrides.$SERVICE.memory // \"$MEMORY\"" services-config.yml)
+        ENV_MIN_INSTANCES=$(yq eval ".environments.$ENV.overrides.$SERVICE.min_instances // 0" services-config.yml)
+        ENV_MAX_INSTANCES=$(yq eval ".environments.$ENV.overrides.$SERVICE.max_instances // 100" services-config.yml)
+        
+        # Function name: env-service (e.g., prod-user-service)
+        FUNCTION_NAME="$ENV-$(echo $SERVICE | tr '_' '-')"
+        
+        echo "Function Name: $FUNCTION_NAME"
+        echo "Path: $SERVICE_PATH"
+        echo "Runtime: $RUNTIME"
+        echo "Memory: $ENV_MEMORY"
+        echo "Min Instances: $ENV_MIN_INSTANCES"
+        echo "Max Instances: $ENV_MAX_INSTANCES"
+        
+        # Get service account
+        SERVICE_ACCOUNT=$(yq eval ".services.$SERVICE.service_account" services-config.yml)
+        SERVICE_ACCOUNT=$(echo $SERVICE_ACCOUNT | sed "s/\${PROJECT_ID}/$PROJECT_ID/g")
+        
+        # Get security settings
+        INGRESS_SETTINGS=$(yq eval ".services.$SERVICE.ingress_settings // \"ALLOW_ALL\"" services-config.yml)
+        
+        # Build environment variables
+        ENV_VARS="ENVIRONMENT=$ENV,LOG_LEVEL=INFO,PROJECT_ID=$PROJECT_ID"
+        
+        # Get service-specific environment variables
+        ENV_VAR_COUNT=$(yq eval ".services.$SERVICE.env_vars | length" services-config.yml)
+        if [ "$ENV_VAR_COUNT" -gt 0 ]; then
+          for i in $(seq 0 $((ENV_VAR_COUNT-1))); do
+            VAR_NAME=$(yq eval ".services.$SERVICE.env_vars[$i].name" services-config.yml)
+            VAR_VALUE=$(yq eval ".services.$SERVICE.env_vars[$i].value" services-config.yml)
+            # Replace environment variables
+            VAR_VALUE=$(echo $VAR_VALUE | sed "s/\${ENV}/$ENV/g" | sed "s/\${PROJECT_ID}/$PROJECT_ID/g")
+            ENV_VARS="$ENV_VARS,$VAR_NAME=$VAR_VALUE"
+          done
+        fi
+        
+        # Build secrets configuration
+        SECRETS=""
+        SECRET_COUNT=$(yq eval ".services.$SERVICE.secrets | length" services-config.yml)
+        if [ "$SECRET_COUNT" -gt 0 ]; then
+          for i in $(seq 0 $((SECRET_COUNT-1))); do
+            SECRET_KEY=$(yq eval ".services.$SERVICE.secrets[$i].key" services-config.yml)
+            SECRET_NAME=$(yq eval ".services.$SERVICE.secrets[$i].secret" services-config.yml)
+            # Replace project ID in secret name
+            SECRET_NAME=$(echo $SECRET_NAME | sed "s/\${PROJECT_ID}/$PROJECT_ID/g")
+            if [ -z "$SECRETS" ]; then
+              SECRETS="$SECRET_KEY=$SECRET_NAME"
+            else
+              SECRETS="$SECRETS,$SECRET_KEY=$SECRET_NAME"
+            fi
+          done
+        fi
+        
+        # Deploy Cloud Function with enhanced configuration
+        DEPLOY_CMD="gcloud functions deploy $FUNCTION_NAME \
+          --source=$SERVICE_PATH \
+          --runtime=$RUNTIME \
+          --trigger=https \
+          --memory=$ENV_MEMORY \
+          --timeout=$TIMEOUT \
+          --region=${_REGION} \
+          --entry-point=$ENTRY_POINT \
+          --min-instances=$ENV_MIN_INSTANCES \
+          --max-instances=$ENV_MAX_INSTANCES \
+          --set-env-vars=\"$ENV_VARS\" \
+          --service-account=$SERVICE_ACCOUNT \
+          --ingress-settings=$INGRESS_SETTINGS \
+          --update-labels=environment=$ENV,service=$SERVICE,version=$BUILD_ID,managed-by=cloudbuild \
+          --allow-unauthenticated \
+          --quiet"
+        
+        # Add secrets if configured
+        if [ ! -z "$SECRETS" ]; then
+          DEPLOY_CMD="$DEPLOY_CMD --set-secrets=\"$SECRETS\""
+        fi
+        
+        echo "Deploying with command: $DEPLOY_CMD"
+        eval $DEPLOY_CMD
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Cloud Function deployed successfully: $FUNCTION_NAME"
+          
+          # Get function URL
+          FUNCTION_URL=$(gcloud functions describe $FUNCTION_NAME --region=${_REGION} --format="value(httpsTrigger.url)")
+          echo "🔗 Function URL: $FUNCTION_URL"
+          echo "$SERVICE=$FUNCTION_URL" >> /workspace/service_urls
+        else
+          echo "❌ Failed to deploy Cloud Function: $FUNCTION_NAME"
+          exit 1
+        fi
+        
+        echo "---"
+      fi
+    done
+
+# Step 4: Deploy Cloud Run (Frontend Service with Docker)
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'deploy-cloud-run'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    source /workspace/deployment_status
+    
+    if [ "$SKIP_DEPLOYMENT" = "true" ]; then
+      echo "⏭️ Skipping Cloud Run deployment - no changes detected"
+      exit 0
+    fi
+    
+    CHANGED_SERVICES=$(cat /workspace/changed_services)
+    ENV=$(cat /workspace/environment)
+    
+    echo "🏃 Deploying Cloud Run services for environment: $ENV"
+    
+    # Deploy each changed frontend service
+    for SERVICE in $CHANGED_SERVICES; do
+      SERVICE_TYPE=$(yq eval ".services.$SERVICE.type" services-config.yml)
+      
+      if [ "$SERVICE_TYPE" = "cloud_run" ]; then
+        echo "🔧 Deploying Cloud Run service: $SERVICE"
+        
+        # Get service configuration
+        SERVICE_PATH=$(yq eval ".services.$SERVICE.path" services-config.yml)
+        MEMORY=$(yq eval ".services.$SERVICE.memory" services-config.yml)
+        CPU=$(yq eval ".services.$SERVICE.cpu" services-config.yml)
+        PORT=$(yq eval ".services.$SERVICE.container.port" services-config.yml)
+        DOCKERFILE=$(yq eval ".services.$SERVICE.container.dockerfile" services-config.yml)
+        
+        # Get environment-specific overrides
+        ENV_MEMORY=$(yq eval ".environments.$ENV.overrides.$SERVICE.memory // \"$MEMORY\"" services-config.yml)
+        ENV_CPU=$(yq eval ".environments.$ENV.overrides.$SERVICE.cpu // \"$CPU\"" services-config.yml)
+        ENV_MIN_INSTANCES=$(yq eval ".environments.$ENV.overrides.$SERVICE.min_instances // 0" services-config.yml)
+        ENV_MAX_INSTANCES=$(yq eval ".environments.$ENV.overrides.$SERVICE.max_instances // 10" services-config.yml)
+        
+        # Service name: env-service (e.g., prod-ui)
+        SERVICE_NAME="$ENV-$(echo $SERVICE | tr '_' '-')"
+        IMAGE_NAME="gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID"
+        
+        echo "Service Name: $SERVICE_NAME"
+        echo "Path: $SERVICE_PATH"
+        echo "Image: $IMAGE_NAME"
+        echo "Memory: $ENV_MEMORY"
+        echo "CPU: $ENV_CPU"
+        echo "Port: $PORT"
+        echo "Min Instances: $ENV_MIN_INSTANCES"
+        echo "Max Instances: $ENV_MAX_INSTANCES"
+        
+        # Build environment variables for Cloud Run
+        ENV_VARS="ENVIRONMENT=$ENV,NODE_ENV=production,PORT=$PORT"
+        
+        # Add API base URL from deployed backend services
+        if [ -f "/workspace/service_urls" ]; then
+          USER_SERVICE_URL=$(grep "user_service=" /workspace/service_urls | cut -d'=' -f2)
+          NOTIFICATION_SERVICE_URL=$(grep "notification_service=" /workspace/service_urls | cut -d'=' -f2)
+          ANALYTICS_SERVICE_URL=$(grep "analytics_service=" /workspace/service_urls | cut -d'=' -f2)
+          
+          if [ ! -z "$USER_SERVICE_URL" ]; then
+            ENV_VARS="$ENV_VARS,USER_SERVICE_URL=$USER_SERVICE_URL"
+          fi
+          if [ ! -z "$NOTIFICATION_SERVICE_URL" ]; then
+            ENV_VARS="$ENV_VARS,NOTIFICATION_SERVICE_URL=$NOTIFICATION_SERVICE_URL"
+          fi
+          if [ ! -z "$ANALYTICS_SERVICE_URL" ]; then
+            ENV_VARS="$ENV_VARS,ANALYTICS_SERVICE_URL=$ANALYTICS_SERVICE_URL"
+          fi
+        fi
+        
+        # Build Docker image
+        echo "🐳 Building Docker image..."
+        docker build -t $IMAGE_NAME -f $SERVICE_PATH/$DOCKERFILE $SERVICE_PATH/
+        
+        # Push image to Container Registry
+        echo "📤 Pushing image to Container Registry..."
+        docker push $IMAGE_NAME
+        
+        # Deploy Cloud Run service with Docker image
+        echo "🚀 Deploying to Cloud Run..."
+        gcloud run deploy $SERVICE_NAME \
+          --image=$IMAGE_NAME \
+          --platform=managed \
+          --region=${_REGION} \
+          --memory=$ENV_MEMORY \
+          --cpu=$ENV_CPU \
+          --port=$PORT \
+          --min-instances=$ENV_MIN_INSTANCES \
+          --max-instances=$ENV_MAX_INSTANCES \
+          --set-env-vars="$ENV_VARS" \
+          --allow-unauthenticated \
+          --quiet
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Cloud Run service deployed successfully: $SERVICE_NAME"
+          
+          # Get service URL
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=${_REGION} --format="value(status.url)")
+          echo "🔗 Service URL: $SERVICE_URL"
+          echo "$SERVICE=$SERVICE_URL" >> /workspace/service_urls
+        else
+          echo "❌ Failed to deploy Cloud Run service: $SERVICE_NAME"
+          exit 1
+        fi
+        
+        echo "---"
+      fi
+    done
+
+# Step 5: Post-deployment validation and health checks
+- name: 'gcr.io/cloud-builders/curl'
+  id: 'validate-deployment'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    source /workspace/deployment_status
+    
+    if [ "$SKIP_DEPLOYMENT" = "true" ]; then
+      echo "⏭️ Skipping validation - no deployment occurred"
+      exit 0
+    fi
+    
+    CHANGED_SERVICES=$(cat /workspace/changed_services)
+    ENV=$(cat /workspace/environment)
+    
+    echo "🔍 Validating deployed services..."
+    
+    if [ -f "/workspace/service_urls" ]; then
+      echo "📋 Deployed service URLs:"
+      cat /workspace/service_urls
+      
+      # Validate each service
+      while IFS='=' read -r SERVICE URL; do
+        if [ ! -z "$URL" ]; then
+          echo "🔍 Validating $SERVICE at $URL"
+          
+          # Try to reach the service (with retries)
+          for i in {1..5}; do
+            if curl -f -s --max-time 10 "$URL/health" > /dev/null 2>&1 || curl -f -s --max-time 10 "$URL" > /dev/null 2>&1; then
+              echo "✅ $SERVICE is responding"
+              break
+            else
+              echo "⏳ Attempt $i/5 - $SERVICE not responding yet, waiting..."
+              sleep 10
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "⚠️ $SERVICE may not be fully ready, but deployment completed"
+            fi
+          done
+        fi
+      done < /workspace/service_urls
+    else
+      echo "ℹ️ No service URLs found for validation"
+    fi
+
+# Step 6: Send deployment notification
+- name: 'gcr.io/cloud-builders/curl'
+  id: 'notify'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    source /workspace/deployment_status
+    
+    if [ "$SKIP_DEPLOYMENT" = "true" ]; then
+      echo "⏭️ Skipping notification - no deployment occurred"
+      exit 0
+    fi
+    
+    CHANGED_SERVICES=$(cat /workspace/changed_services)
+    ENV=$(cat /workspace/environment)
+    
+    echo "📢 Sending deployment notification..."
+    
+    # Create deployment summary
+    DEPLOYMENT_SUMMARY="🚀 *Deployment Completed*\n"
+    DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}Environment: \`$ENV\`\n"
+    DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}Services: \`$CHANGED_SERVICES\`\n"
+    DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}Build ID: \`$BUILD_ID\`\n"
+    DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}Branch: \`${BRANCH_NAME:-${_HEAD_BRANCH:-main}}\`\n"
+    
+    if [ -f "/workspace/service_urls" ]; then
+      DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}\n📋 *Service URLs:*\n"
+      while IFS='=' read -r SERVICE URL; do
+        if [ ! -z "$URL" ]; then
+          DEPLOYMENT_SUMMARY="${DEPLOYMENT_SUMMARY}• $SERVICE: $URL\n"
+        fi
+      done < /workspace/service_urls
+    fi
+    
+    # Send Slack notification (if webhook configured)
+    if [ ! -z "${_SLACK_WEBHOOK}" ]; then
+      curl -X POST -H 'Content-type: application/json' \
+        --data "{
+          \"text\": \"$DEPLOYMENT_SUMMARY\"
+        }" \
+        ${_SLACK_WEBHOOK} || echo "Failed to send Slack notification"
+    fi
+    
+    echo "✅ Deployment process completed successfully!"
+
+# Substitutions for configuration
+substitutions:
+  _REGION: 'us-central1'
+  _SLACK_WEBHOOK: ''
+  _TRIGGER_TYPE: 'auto'
+  _HEAD_BRANCH: 'main'
+
+# Build options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: '100'
+  
+timeout: '1200s'

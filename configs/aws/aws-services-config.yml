@@ -1,0 +1,385 @@
+# AWS Service Configuration Registry
+# This file defines all services for AWS deployment (Lambda + EC2)
+
+version: "1.0"
+project:
+  name: "mono-repo"
+  description: "Angular Python Mono Repo Project - AWS Deployment"
+  
+# Global AWS defaults
+defaults:
+  backend:
+    runtime: "python3.9"
+    memory: 256
+    timeout: 60
+    region: "us-east-1"
+    handler: "main.lambda_handler"
+    architecture: "x86_64"
+  
+  frontend:
+    instance_type: "t3.medium"
+    region: "us-east-1"
+    min_capacity: 1
+    max_capacity: 5
+    desired_capacity: 1
+
+# AWS Service definitions
+services:
+  # Backend Services (Lambda Functions)
+  user_service:
+    path: "backend/services/user_service"
+    type: "lambda"
+    description: "User management service with CRUD operations"
+    runtime: "python3.9"
+    memory: 256
+    timeout: 60
+    handler: "main.lambda_handler"
+    architecture: "x86_64"
+    
+    # Environment variables
+    env_vars:
+      - name: "DATABASE_URL"
+        description: "Database connection string"
+      - name: "JWT_SECRET_KEY"
+        description: "JWT token secret"
+      - name: "ENVIRONMENT"
+        description: "Deployment environment"
+      - name: "LOG_LEVEL"
+        description: "Logging level"
+        default: "INFO"
+    
+    # AWS Systems Manager Parameter Store parameters
+    parameters:
+      - name: "/mono-repo/{env}/user-service/db-password"
+        description: "Database password"
+      - name: "/mono-repo/{env}/user-service/jwt-secret"
+        description: "JWT signing secret"
+    
+    # Lambda-specific configurations
+    config:
+      reserved_concurrency: 50
+      provisioned_concurrency: 5
+      dead_letter_queue: true
+      
+    # VPC configuration (optional)
+    vpc:
+      enabled: false
+      subnet_ids: []
+      security_group_ids: []
+      
+    # Dependencies (for build order)
+    dependencies: []
+    
+  notification_service:
+    path: "backend/services/notification_service"
+    type: "lambda"
+    description: "Notification service for email, SMS, and push notifications"
+    runtime: "python3.9"
+    memory: 512
+    timeout: 120
+    handler: "main.lambda_handler"
+    architecture: "x86_64"
+    
+    env_vars:
+      - name: "SMTP_HOST"
+        description: "SMTP server hostname"
+      - name: "SMTP_PORT"
+        description: "SMTP server port"
+        default: "587"
+      - name: "TWILIO_ACCOUNT_SID"
+        description: "Twilio account SID"
+      - name: "FCM_SERVER_KEY"
+        description: "Firebase Cloud Messaging server key"
+      - name: "ENVIRONMENT"
+        description: "Deployment environment"
+      - name: "LOG_LEVEL"
+        description: "Logging level"
+        default: "INFO"
+    
+    parameters:
+      - name: "/mono-repo/{env}/notification-service/smtp-password"
+        description: "SMTP server password"
+      - name: "/mono-repo/{env}/notification-service/twilio-auth-token"
+        description: "Twilio authentication token"
+      - name: "/mono-repo/{env}/notification-service/fcm-server-key"
+        description: "Firebase Cloud Messaging server key"
+    
+    config:
+      reserved_concurrency: 100
+      provisioned_concurrency: 0
+      dead_letter_queue: true
+      
+    vpc:
+      enabled: false
+      subnet_ids: []
+      security_group_ids: []
+      
+    dependencies: []
+    
+  analytics_service:
+    path: "backend/services/analytics_service"
+    type: "lambda"
+    description: "Analytics service for event tracking and metrics"
+    runtime: "python3.9"
+    memory: 1024
+    timeout: 300
+    handler: "main.lambda_handler"
+    architecture: "x86_64"
+    
+    env_vars:
+      - name: "DYNAMODB_TABLE"
+        description: "DynamoDB table name for analytics"
+      - name: "S3_BUCKET"
+        description: "S3 bucket for data storage"
+      - name: "REDIS_ENDPOINT"
+        description: "ElastiCache Redis endpoint"
+      - name: "ENVIRONMENT"
+        description: "Deployment environment"
+      - name: "LOG_LEVEL"
+        description: "Logging level"
+        default: "INFO"
+    
+    parameters:
+      - name: "/mono-repo/{env}/analytics-service/redis-auth-token"
+        description: "Redis authentication token"
+      - name: "/mono-repo/{env}/analytics-service/aws-access-key"
+        description: "AWS access key for services"
+    
+    config:
+      reserved_concurrency: 50
+      provisioned_concurrency: 0
+      dead_letter_queue: true
+      
+    vpc:
+      enabled: false
+      subnet_ids: []
+      security_group_ids: []
+      
+    dependencies: []
+
+  # Frontend Service (EC2 with Docker)
+  ui:
+    path: "ui"
+    type: "ec2"
+    description: "Angular frontend application deployed on EC2"
+    
+    # EC2 configuration
+    ec2:
+      instance_type: "t3.medium"
+      ami_id: "ami-0c02fb55956c7d316"  # Amazon Linux 2 AMI
+      key_pair: "mono-repo-keypair"
+      security_groups: ["mono-repo-web-sg"]
+      
+    # Auto Scaling configuration
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 5
+      desired_capacity: 1
+      health_check_type: "ELB"
+      health_check_grace_period: 300
+      
+    # Load Balancer configuration
+    load_balancer:
+      type: "application"
+      scheme: "internet-facing"
+      target_port: 80
+      health_check_path: "/health"
+      
+    # Docker configuration
+    container:
+      port: 80
+      dockerfile: "Dockerfile"
+      image_name: "mono-repo-ui"
+      
+    env_vars:
+      - name: "API_BASE_URL"
+        description: "Backend API base URL"
+      - name: "ENVIRONMENT"
+        description: "Deployment environment"
+      - name: "NODE_ENV"
+        description: "Node.js environment"
+        default: "production"
+    
+    parameters: []
+    
+    dependencies: 
+      - "user_service"
+      - "notification_service" 
+      - "analytics_service"
+
+# Environment-specific overrides
+environments:
+  prod:
+    suffix: "prod"
+    region: "us-east-1"
+    overrides:
+      user_service:
+        memory: 512
+        timeout: 90
+        reserved_concurrency: 100
+        provisioned_concurrency: 10
+      notification_service:
+        memory: 1024
+        timeout: 180
+        reserved_concurrency: 200
+        provisioned_concurrency: 5
+      analytics_service:
+        memory: 2048
+        timeout: 300
+        reserved_concurrency: 100
+        provisioned_concurrency: 5
+      ui:
+        instance_type: "t3.large"
+        min_capacity: 2
+        max_capacity: 10
+        desired_capacity: 2
+        
+  staging:
+    suffix: "staging"
+    region: "us-east-1"
+    overrides:
+      user_service:
+        memory: 256
+        timeout: 60
+        reserved_concurrency: 20
+        provisioned_concurrency: 2
+      notification_service:
+        memory: 512
+        timeout: 120
+        reserved_concurrency: 50
+        provisioned_concurrency: 0
+      analytics_service:
+        memory: 1024
+        timeout: 240
+        reserved_concurrency: 20
+        provisioned_concurrency: 0
+      ui:
+        instance_type: "t3.small"
+        min_capacity: 1
+        max_capacity: 3
+        desired_capacity: 1
+        
+  dev:
+    suffix: "dev"
+    region: "us-east-1"
+    overrides:
+      user_service:
+        memory: 256
+        timeout: 60
+        reserved_concurrency: 5
+        provisioned_concurrency: 0
+      notification_service:
+        memory: 256
+        timeout: 60
+        reserved_concurrency: 10
+        provisioned_concurrency: 0
+      analytics_service:
+        memory: 512
+        timeout: 120
+        reserved_concurrency: 5
+        provisioned_concurrency: 0
+      ui:
+        instance_type: "t3.micro"
+        min_capacity: 1
+        max_capacity: 2
+        desired_capacity: 1
+        
+  hotfix:
+    suffix: "hotfix"
+    region: "us-east-1"
+    overrides:
+      user_service:
+        memory: 256
+        timeout: 60
+        reserved_concurrency: 3
+        provisioned_concurrency: 0
+      notification_service:
+        memory: 256
+        timeout: 60
+        reserved_concurrency: 5
+        provisioned_concurrency: 0
+      analytics_service:
+        memory: 512
+        timeout: 120
+        reserved_concurrency: 3
+        provisioned_concurrency: 0
+      ui:
+        instance_type: "t3.micro"
+        min_capacity: 1
+        max_capacity: 1
+        desired_capacity: 1
+
+# AWS Build and deployment settings
+build:
+  # ECR registry settings
+  registry:
+    region: "us-east-1"
+    repository_prefix: "mono-repo"
+    
+  # CodeBuild settings
+  codebuild:
+    compute_type: "BUILD_GENERAL1_MEDIUM"
+    image: "aws/codebuild/standard:5.0"
+    timeout: 60
+    
+  # S3 bucket for artifacts
+  artifacts:
+    bucket: "mono-repo-build-artifacts"
+    prefix: "builds"
+
+# IAM roles and policies
+iam:
+  # Lambda execution role
+  lambda_execution_role: "mono-repo-lambda-execution-role"
+  
+  # EC2 instance profile
+  ec2_instance_profile: "mono-repo-ec2-instance-profile"
+  
+  # CodeBuild service role
+  codebuild_service_role: "mono-repo-codebuild-service-role"
+  
+  # CodeDeploy service role
+  codedeploy_service_role: "mono-repo-codedeploy-service-role"
+
+# Notification settings
+notifications:
+  sns:
+    topic_arn: "arn:aws:sns:us-east-1:ACCOUNT-ID:mono-repo-notifications"
+    
+  slack:
+    webhook_parameter: "/mono-repo/slack/webhook-url"
+
+# Monitoring and logging
+monitoring:
+  # CloudWatch settings
+  cloudwatch:
+    log_retention_days: 14
+    
+  # X-Ray tracing
+  xray:
+    enabled: true
+    
+  # CloudWatch alarms
+  alarms:
+    lambda_errors: true
+    lambda_duration: true
+    ec2_cpu_utilization: true
+    
+# Security settings
+security:
+  # VPC settings
+  vpc:
+    vpc_id: "vpc-xxxxxxxxx"
+    private_subnet_ids: []
+    public_subnet_ids: []
+    
+  # Security groups
+  security_groups:
+    lambda_sg: "sg-lambda-xxxxxxxxx"
+    ec2_sg: "sg-ec2-xxxxxxxxx"
+    alb_sg: "sg-alb-xxxxxxxxx"
+    
+  # KMS encryption
+  kms:
+    enabled: true
+    key_id: "alias/mono-repo-key"

@@ -1,0 +1,138 @@
+steps:
+  # Install Node.js dependencies
+  - name: 'node:18-alpine'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        npm ci --only=production
+        npm install -g @angular/cli
+
+  # Run tests
+  - name: 'node:18-alpine'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        npm ci
+        npm install -g @angular/cli
+        npm run test:ci
+        npm run lint
+
+  # Build the application
+  - name: 'node:18-alpine'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        npm ci
+        npm install -g @angular/cli
+        npm run build:prod
+
+  # Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/mono-repo-ui:latest'
+      - '.'
+
+  # Push Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/mono-repo-ui:latest'
+
+  # Deploy to Cloud Run (staging)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:latest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy mono-repo-ui-${BRANCH_NAME} \
+          --image gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID \
+          --platform managed \
+          --region ${_REGION} \
+          --allow-unauthenticated \
+          --memory 512Mi \
+          --cpu 1 \
+          --min-instances 0 \
+          --max-instances 10 \
+          --port 80 \
+          --set-env-vars ENVIRONMENT=${_ENVIRONMENT} \
+          --tag ${BRANCH_NAME}
+
+  # Deploy to production Cloud Run (only for main branch)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:latest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "${BRANCH_NAME}" = "main" ]; then
+          gcloud run deploy mono-repo-ui \
+            --image gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID \
+            --platform managed \
+            --region ${_REGION} \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 1 \
+            --max-instances 20 \
+            --port 80 \
+            --set-env-vars ENVIRONMENT=production
+          
+          # Update traffic to new revision
+          gcloud run services update-traffic mono-repo-ui \
+            --to-latest \
+            --region ${_REGION}
+        fi
+
+  # Run security scan
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud container images scan gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID \
+          --remote || echo "Security scan completed with warnings"
+
+  # Performance test (for production deployments)
+  - name: 'node:18-alpine'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        if [ "${BRANCH_NAME}" = "main" ]; then
+          npm install -g lighthouse
+          lighthouse https://mono-repo-ui-$PROJECT_ID.a.run.app \
+            --output json \
+            --output-path lighthouse-report.json \
+            --chrome-flags="--headless --no-sandbox" || echo "Lighthouse completed"
+        fi
+
+substitutions:
+  _REGION: 'us-central1'
+  _ENVIRONMENT: 'staging'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  substitution_option: 'ALLOW_LOOSE'
+
+timeout: '1800s'
+
+images:
+  - 'gcr.io/$PROJECT_ID/mono-repo-ui:$BRANCH_NAME-$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/mono-repo-ui:latest'
+
+tags:
+  - 'mono-repo-ui'
+  - 'frontend'
+  - 'cloud-run'

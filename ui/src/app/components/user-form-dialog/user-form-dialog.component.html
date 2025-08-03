@@ -1,0 +1,55 @@
+<div class="dialog-container">
+  <h2 mat-dialog-title>{{title}}</h2>
+  
+  <mat-dialog-content>
+    <form [formGroup]="userForm" class="user-form">
+      
+      <!-- Name Field -->
+      <mat-form-field class="full-width">
+        <mat-label>Full Name</mat-label>
+        <input matInput 
+               formControlName="name" 
+               placeholder="Enter full name"
+               autocomplete="name">
+        <mat-icon matSuffix>person</mat-icon>
+        <mat-error *ngIf="userForm.get('name')?.errors && userForm.get('name')?.touched">
+          {{getErrorMessage('name')}}
+        </mat-error>
+      </mat-form-field>
+
+      <!-- Email Field -->
+      <mat-form-field class="full-width">
+        <mat-label>Email Address</mat-label>
+        <input matInput 
+               formControlName="email" 
+               placeholder="Enter email address"
+               type="email"
+               autocomplete="email">
+        <mat-icon matSuffix>email</mat-icon>
+        <mat-error *ngIf="userForm.get('email')?.errors && userForm.get('email')?.touched">
+          {{getErrorMessage('email')}}
+        </mat-error>
+      </mat-form-field>
+
+      <!-- Form Validation Summary -->
+      <div *ngIf="userForm.invalid && userForm.touched" class="validation-summary">
+        <mat-icon>warning</mat-icon>
+        <span>Please correct the errors above before submitting.</span>
+      </div>
+
+    </form>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button (click)="onCancel()" type="button">
+      Cancel
+    </button>
+    <button mat-raised-button 
+            color="primary" 
+            (click)="onSubmit()" 
+            [disabled]="userForm.invalid"
+            type="submit">
+      {{submitButtonText}}
+    </button>
+  </mat-dialog-actions>
+</div>

@@ -1,0 +1,68 @@
+/* You can add global styles to this file, and also import other style files */
+
+html, body { height: 100%; }
+body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+/* Custom global styles */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.mat-card {
+  margin: 16px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+.p-16 {
+  padding: 16px;
+}
+
+/* Loading spinner */
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+/* Error message */
+.error-message {
+  color: #f44336;
+  background-color: #ffebee;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 16px 0;
+}
+
+/* Success message */
+.success-message {
+  color: #4caf50;
+  background-color: #e8f5e8;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 16px 0;
+}
+
+/* Chart container */
+.chart-container {
+  position: relative;
+  height: 400px;
+  margin: 20px 0;
+}

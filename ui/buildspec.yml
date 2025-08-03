@@ -1,0 +1,129 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "Installing dependencies..."
+      - npm install -g @angular/cli
+      - npm ci
+
+  pre_build:
+    commands:
+      - echo "Running pre-build phase..."
+      - echo "Running linting..."
+      - npm run lint
+      - echo "Running unit tests..."
+      - npm run test:ci
+      - echo "Tests completed successfully"
+
+  build:
+    commands:
+      - echo "Build phase started on `date`"
+      - echo "Building Angular application..."
+      - npm run build:prod
+      
+      # Build Docker image
+      - echo "Building Docker image..."
+      - docker build -t mono-repo-ui:$CODEBUILD_BUILD_NUMBER .
+      - docker tag mono-repo-ui:$CODEBUILD_BUILD_NUMBER $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mono-repo-ui:$CODEBUILD_BUILD_NUMBER
+      - docker tag mono-repo-ui:$CODEBUILD_BUILD_NUMBER $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mono-repo-ui:latest
+      
+      # Login to ECR
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      
+      # Push to ECR
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mono-repo-ui:$CODEBUILD_BUILD_NUMBER
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mono-repo-ui:latest
+      
+      # Create deployment package for CodeDeploy
+      - echo "Creating CodeDeploy package..."
+      - mkdir -p codedeploy-package
+      - cp appspec.yml codedeploy-package/
+      - cp deploy.sh codedeploy-package/
+      - cp -r scripts codedeploy-package/ || mkdir codedeploy-package/scripts
+      
+      # Create deployment configuration
+      - |
+        cat > codedeploy-package/deployment-config.json << EOF
+        {
+          "imageUri": "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/mono-repo-ui:$CODEBUILD_BUILD_NUMBER",
+          "buildNumber": "$CODEBUILD_BUILD_NUMBER",
+          "environment": "$ENVIRONMENT",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+      
+      # Package for CodeDeploy
+      - cd codedeploy-package
+      - zip -r ../mono-repo-ui-deployment-$CODEBUILD_BUILD_NUMBER.zip .
+      - cd ..
+      
+      # Upload to S3
+      - aws s3 cp mono-repo-ui-deployment-$CODEBUILD_BUILD_NUMBER.zip s3://$DEPLOYMENT_BUCKET/ui-deployments/
+      
+      echo "Build completed on `date`"
+
+  post_build:
+    commands:
+      - echo "Post-build phase started on `date`"
+      
+      # Trigger CodeDeploy deployment
+      - |
+        DEPLOYMENT_ID=$(aws deploy create-deployment \
+          --application-name mono-repo-ui \
+          --deployment-group-name $ENVIRONMENT-deployment-group \
+          --s3-location bucket=$DEPLOYMENT_BUCKET,key=ui-deployments/mono-repo-ui-deployment-$CODEBUILD_BUILD_NUMBER.zip,bundleType=zip \
+          --deployment-config-name CodeDeployDefault.AllAtOnceBlueGreen \
+          --description "Deployment of build $CODEBUILD_BUILD_NUMBER" \
+          --query 'deploymentId' \
+          --output text)
+        
+        echo "CodeDeploy deployment started with ID: $DEPLOYMENT_ID"
+        
+        # Wait for deployment to complete (optional)
+        if [ "$WAIT_FOR_DEPLOYMENT" = "true" ]; then
+          aws deploy wait deployment-successful --deployment-id $DEPLOYMENT_ID
+          echo "Deployment completed successfully"
+        fi
+      
+      # Run post-deployment tests
+      - echo "Running post-deployment health checks..."
+      - |
+        if [ "$ENVIRONMENT" = "production" ]; then
+          # Wait a bit for the deployment to stabilize
+          sleep 30
+          
+          # Health check
+          HEALTH_CHECK_URL="http://$LOAD_BALANCER_DNS/health"
+          curl -f $HEALTH_CHECK_URL || echo "Health check failed"
+          
+          # Basic smoke test
+          curl -f "http://$LOAD_BALANCER_DNS" || echo "Smoke test failed"
+        fi
+      
+      echo "Post-build completed on `date`"
+
+artifacts:
+  files:
+    - mono-repo-ui-deployment-$CODEBUILD_BUILD_NUMBER.zip
+    - appspec.yml
+    - deploy.sh
+  name: mono-repo-ui-artifacts-$CODEBUILD_BUILD_NUMBER
+
+cache:
+  paths:
+    - 'node_modules/**/*'
+    - '/root/.npm/**/*'
+
+env:
+  variables:
+    NODE_ENV: "production"
+    CI: "true"
+  parameter-store:
+    DEPLOYMENT_BUCKET: "/mono-repo/deployment-bucket"
+    AWS_ACCOUNT_ID: "/mono-repo/aws-account-id"
+    ENVIRONMENT: "/mono-repo/environment"
+    LOAD_BALANCER_DNS: "/mono-repo/load-balancer-dns"
+    WAIT_FOR_DEPLOYMENT: "/mono-repo/wait-for-deployment"

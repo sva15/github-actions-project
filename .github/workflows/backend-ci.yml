@@ -1,0 +1,236 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: 
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'backend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+        service: [user_service, notification_service, analytics_service]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.service }}-${{ hashFiles('backend/services/${{ matrix.service }}/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.service }}-
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 black isort bandit safety
+    
+    - name: Code formatting check (Black)
+      working-directory: backend/services/${{ matrix.service }}
+      run: black --check --diff .
+    
+    - name: Import sorting check (isort)
+      working-directory: backend/services/${{ matrix.service }}
+      run: isort --check-only --diff .
+    
+    - name: Lint with flake8
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Security check with bandit
+      working-directory: backend/services/${{ matrix.service }}
+      run: bandit -r . -f json -o bandit-report.json || true
+    
+    - name: Check for known security vulnerabilities
+      working-directory: backend/services/${{ matrix.service }}
+      run: safety check --json --output safety-report.json || true
+    
+    - name: Run unit tests with coverage
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        pytest test_main.py -v --cov=main --cov-report=xml --cov-report=html --cov-report=term
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: backend/services/${{ matrix.service }}/coverage.xml
+        flags: backend,${{ matrix.service }}
+        name: codecov-${{ matrix.service }}
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.service }}-${{ matrix.python-version }}
+        path: |
+          backend/services/${{ matrix.service }}/coverage.xml
+          backend/services/${{ matrix.service }}/htmlcov/
+          backend/services/${{ matrix.service }}/bandit-report.json
+          backend/services/${{ matrix.service }}/safety-report.json
+
+  docker-build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [user_service, notification_service, analytics_service]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKER_USERNAME }}/mono-repo-${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: backend/services/${{ matrix.service }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-gcp:
+    needs: [test, docker-build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [user_service, notification_service, analytics_service]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+    
+    - name: Deploy to Cloud Functions
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        gcloud functions deploy mono-repo-${{ matrix.service }} \
+          --runtime python39 \
+          --trigger-http \
+          --entry-point gcp_handler \
+          --memory 256MB \
+          --timeout 60s \
+          --allow-unauthenticated \
+          --region us-central1
+
+  deploy-aws:
+    needs: [test, docker-build]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [user_service, notification_service, analytics_service]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install AWS SAM CLI
+      run: |
+        pip install aws-sam-cli
+    
+    - name: Package Lambda function
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        # Create deployment package
+        mkdir -p deployment
+        cp main.py deployment/
+        pip install -r requirements.txt -t deployment/
+        cd deployment && zip -r ../lambda-${{ matrix.service }}.zip .
+    
+    - name: Deploy to Lambda
+      working-directory: backend/services/${{ matrix.service }}
+      run: |
+        # Update function code
+        aws lambda update-function-code \
+          --function-name mono-repo-${{ matrix.service }} \
+          --zip-file fileb://lambda-${{ matrix.service }}.zip \
+          --region us-east-1 || \
+        # Create function if it doesn't exist
+        aws lambda create-function \
+          --function-name mono-repo-${{ matrix.service }} \
+          --runtime python3.9 \
+          --role ${{ secrets.AWS_LAMBDA_ROLE_ARN }} \
+          --handler main.lambda_handler \
+          --zip-file fileb://lambda-${{ matrix.service }}.zip \
+          --timeout 30 \
+          --memory-size 256 \
+          --region us-east-1
+
+  notification:
+    needs: [deploy-gcp, deploy-aws]
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Notify deployment status
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: |
+          Backend deployment completed!
+          GCP Status: ${{ needs.deploy-gcp.result }}
+          AWS Status: ${{ needs.deploy-aws.result }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: env.SLACK_WEBHOOK_URL != null

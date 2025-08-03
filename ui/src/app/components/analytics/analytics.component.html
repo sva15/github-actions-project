@@ -1,0 +1,253 @@
+<div class="analytics-container">
+  <!-- Header -->
+  <div class="header">
+    <h2>Analytics Dashboard</h2>
+    <div class="header-actions">
+      <mat-form-field appearance="outline">
+        <mat-label>Period</mat-label>
+        <mat-select [formControl]="selectedPeriod">
+          <mat-option *ngFor="let period of periods" [value]="period.value">
+            {{period.label}}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      
+      <button mat-icon-button (click)="refreshData()" matTooltip="Refresh Data">
+        <mat-icon>refresh</mat-icon>
+      </button>
+      
+      <button mat-button (click)="exportAnalytics()">
+        <mat-icon>download</mat-icon>
+        Export
+      </button>
+    </div>
+  </div>
+
+  <!-- Key Metrics Cards -->
+  <div class="metrics-grid" *ngIf="!loading">
+    <mat-card class="metric-card">
+      <mat-card-content>
+        <div class="metric-content">
+          <div class="metric-icon">
+            <mat-icon>visibility</mat-icon>
+          </div>
+          <div class="metric-details">
+            <h3>{{formatNumber(analyticsData.pageViews)}}</h3>
+            <p>Page Views</p>
+            <span class="metric-change positive">+12.5%</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="metric-card">
+      <mat-card-content>
+        <div class="metric-content">
+          <div class="metric-icon">
+            <mat-icon>people</mat-icon>
+          </div>
+          <div class="metric-details">
+            <h3>{{formatNumber(analyticsData.uniqueUsers)}}</h3>
+            <p>Unique Users</p>
+            <span class="metric-change positive">+8.3%</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="metric-card">
+      <mat-card-content>
+        <div class="metric-content">
+          <div class="metric-icon">
+            <mat-icon>schedule</mat-icon>
+          </div>
+          <div class="metric-details">
+            <h3>{{formatDuration(analyticsData.avgSessionDuration)}}</h3>
+            <p>Avg. Session Duration</p>
+            <span class="metric-change negative">-2.1%</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="metric-card">
+      <mat-card-content>
+        <div class="metric-content">
+          <div class="metric-icon">
+            <mat-icon>trending_up</mat-icon>
+          </div>
+          <div class="metric-details">
+            <h3>{{analyticsData.conversionRate}}%</h3>
+            <p>Conversion Rate</p>
+            <span class="metric-change positive">+5.7%</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <!-- Loading State for Metrics -->
+  <div class="metrics-loading" *ngIf="loading">
+    <mat-spinner></mat-spinner>
+    <p>Loading analytics data...</p>
+  </div>
+
+  <!-- Charts Section -->
+  <div class="charts-section">
+    <!-- Page Views Chart -->
+    <mat-card class="chart-card">
+      <mat-card-header>
+        <mat-card-title>Page Views Over Time</mat-card-title>
+        <mat-card-subtitle>Daily page view trends</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="chart-container">
+          <canvas #pageViewsChart></canvas>
+          <div class="chart-loading" *ngIf="chartsLoading">
+            <mat-spinner diameter="30"></mat-spinner>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Events Distribution Chart -->
+    <mat-card class="chart-card">
+      <mat-card-header>
+        <mat-card-title>Event Distribution</mat-card-title>
+        <mat-card-subtitle>Breakdown of user events</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="chart-container">
+          <canvas #eventsChart></canvas>
+        </div>
+        
+        <!-- Event Details Table -->
+        <div class="event-details">
+          <h4>Event Breakdown</h4>
+          <div class="event-list">
+            <div class="event-item" *ngFor="let event of eventData">
+              <div class="event-info">
+                <mat-icon [style.color]="getEventColor(event.event_type)">
+                  {{getEventIcon(event.event_type)}}
+                </mat-icon>
+                <span class="event-name">{{event.event_type.replace('_', ' ') | titlecase}}</span>
+              </div>
+              <div class="event-stats">
+                <span class="event-count">{{formatNumber(event.count)}}</span>
+                <span class="event-percentage">{{event.percentage}}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <!-- Secondary Charts -->
+  <div class="secondary-charts">
+    <!-- User Activity Chart -->
+    <mat-card class="chart-card">
+      <mat-card-header>
+        <mat-card-title>Hourly User Activity</mat-card-title>
+        <mat-card-subtitle>Active users by hour of day</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="chart-container">
+          <canvas #userActivityChart></canvas>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Conversion Funnel Chart -->
+    <mat-card class="chart-card">
+      <mat-card-header>
+        <mat-card-title>Conversion Funnel</mat-card-title>
+        <mat-card-subtitle>User journey through conversion stages</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="chart-container">
+          <canvas #conversionChart></canvas>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <!-- Recent Events -->
+  <mat-card class="recent-events-card">
+    <mat-card-header>
+      <mat-card-title>Recent Events</mat-card-title>
+      <mat-card-subtitle>Latest user activities</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="events-list">
+        <div class="event-row" *ngFor="let event of recentEvents">
+          <div class="event-icon-container">
+            <mat-icon [style.color]="getEventColor(event.event_type)">
+              {{getEventIcon(event.event_type)}}
+            </mat-icon>
+          </div>
+          
+          <div class="event-details-container">
+            <div class="event-title">
+              {{event.event_type.replace('_', ' ') | titlecase}}
+            </div>
+            <div class="event-meta">
+              <span class="user-id">User: {{event.user_id}}</span>
+              <span class="timestamp">{{event.timestamp | date:'short'}}</span>
+            </div>
+            <div class="event-metadata" *ngIf="event.metadata">
+              <span *ngFor="let item of event.metadata | keyvalue" class="metadata-item">
+                {{item.key}}: {{item.value}}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="no-events" *ngIf="recentEvents.length === 0">
+        <mat-icon>event_note</mat-icon>
+        <p>No recent events</p>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Additional Metrics -->
+  <div class="additional-metrics">
+    <mat-card class="metric-card">
+      <mat-card-header>
+        <mat-card-title>Bounce Rate</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="metric-display">
+          <div class="metric-value">{{analyticsData.bounceRate}}%</div>
+          <div class="metric-progress">
+            <mat-progress-bar mode="determinate" [value]="analyticsData.bounceRate" 
+                              [color]="analyticsData.bounceRate > 50 ? 'warn' : 'primary'">
+            </mat-progress-bar>
+          </div>
+          <div class="metric-description">
+            Percentage of single-page sessions
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="metric-card">
+      <mat-card-header>
+        <mat-card-title>Total Sessions</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="metric-display">
+          <div class="metric-value">{{formatNumber(analyticsData.sessions)}}</div>
+          <div class="metric-trend">
+            <mat-icon class="trend-icon positive">trending_up</mat-icon>
+            <span class="trend-text">+15.2% from last period</span>
+          </div>
+          <div class="metric-description">
+            Total user sessions recorded
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+</div>
