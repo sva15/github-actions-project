@@ -75,7 +75,6 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: SonarQube Scan
-      if: github.ref == 'refs/heads/main'
       uses: sonarsource/sonarqube-scan-action@master
       with:
         projectBaseDir: ./calculator-project
@@ -83,7 +82,6 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     
     - name: Publish Code Coverage Report
-      if: github.ref == 'refs/heads/main'
       uses: dorny/test-reporter@v1
       with:
         name: Code Coverage Report
@@ -91,13 +89,10 @@ jobs:
         reporter: cobertura
 
     - name: SonarQube Quality Gate check
-      if: github.ref == 'refs/heads/main'
       id: sonarqube-quality-gate-check
       uses: sonarsource/sonarqube-quality-gate-action@master
       with:
         pollingTimeoutSec: 600
-        #projectBaseDir: ./calculator-project
-       #scanMetadataReportFile: ./calculator-project/.scannerwork/report-task.txt
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     
