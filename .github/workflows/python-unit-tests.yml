@@ -86,7 +86,7 @@ jobs:
       with:
         name: Code Coverage Report
         path: ./calculator-project/coverage.xml
-        reporter: cobertura
+        reporter: jest-junit
 
     - name: SonarQube Quality Gate check
       id: sonarqube-quality-gate-check
