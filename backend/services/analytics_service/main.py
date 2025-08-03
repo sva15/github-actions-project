@@ -20,6 +20,10 @@ class AnalyticsService:
         self.events = []
         self.metrics = defaultdict(list)
     
+    def get_current_time(self) -> str:
+        """Get current timestamp"""
+        return datetime.utcnow().isoformat()
+    
     def track_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """Track an analytics event"""
         try:

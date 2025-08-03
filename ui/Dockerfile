@@ -21,7 +21,7 @@ RUN npm run build:prod
 FROM nginx:alpine
 
 # Copy the built application from the build stage
-COPY --from=build /app/dist/mono-repo-ui /usr/share/nginx/html
+COPY --from=build /app/dist/cloudsync-platform /usr/share/nginx/html
 
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf

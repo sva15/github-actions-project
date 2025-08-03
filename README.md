@@ -1,4 +1,4 @@
-# Mono Repo Application
+# CloudSync Platform
 
 A full-stack application with Angular frontend and Python backend services, designed for deployment on both GCP (Cloud Run/Cloud Functions) and AWS (EC2/Lambda).
 

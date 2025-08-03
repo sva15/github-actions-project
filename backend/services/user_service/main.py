@@ -17,6 +17,10 @@ class UserService:
         # In a real application, this would connect to a database
         self.users = {}
     
+    def get_current_time(self) -> str:
+        """Get current timestamp"""
+        return datetime.utcnow().isoformat()
+    
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user"""
         try:

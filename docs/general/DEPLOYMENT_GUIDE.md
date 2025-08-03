@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This guide provides step-by-step instructions for deploying the mono repo application to both GCP and AWS.
+This guide provides step-by-step instructions for deploying the CloudSync Platform to both GCP and AWS.
 
 ## Prerequisites
 

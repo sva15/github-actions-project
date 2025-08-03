@@ -27,6 +27,14 @@ class NotificationService:
     def __init__(self):
         # In a real application, this would connect to a database
         self.notifications = {}
+        self._initialize_templates()
+    
+    def get_current_time(self) -> str:
+        """Get current timestamp"""
+        return datetime.utcnow().isoformat()
+    
+    def _initialize_templates(self):
+        """Initialize notification templates"""
         self.templates = {
             'welcome': {
                 'subject': 'Welcome to our platform!',

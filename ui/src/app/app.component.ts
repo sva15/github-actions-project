@@ -6,7 +6,7 @@ import { Component } from '@angular/core';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent {
-  title = 'Mono Repo Application';
+  title = 'CloudSync Platform';
   
   menuItems = [
     { path: '/dashboard', icon: 'dashboard', label: 'Dashboard' },

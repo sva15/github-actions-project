@@ -444,4 +444,4 @@ aws logs describe-log-streams --log-group-name /aws/lambda/FUNCTION_NAME
 aws deploy get-deployment --deployment-id DEPLOYMENT_ID
 ```
 
-This setup provides a robust, scalable deployment infrastructure for your mono repo application across both GCP and AWS platforms.
+This setup provides a robust, scalable deployment infrastructure for your CloudSync Platform across both GCP and AWS platforms.
