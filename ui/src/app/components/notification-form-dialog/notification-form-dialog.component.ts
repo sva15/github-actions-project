@@ -20,6 +20,7 @@ export class NotificationFormDialogComponent {
   notificationForm: FormGroup;
   isEditMode: boolean;
   notificationTypes = ['email', 'sms', 'push'];
+  templates = ['welcome', 'password_reset', 'order_confirmation'];
 
   constructor(
     private fb: FormBuilder,
@@ -35,6 +36,7 @@ export class NotificationFormDialogComponent {
       title: [this.data?.title || '', [Validators.required, Validators.minLength(3)]],
       message: [this.data?.message || '', [Validators.required, Validators.minLength(10)]],
       type: [this.data?.type || 'email', Validators.required],
+      template: [this.data?.template || this.templates[0], Validators.required],
       recipients: [this.data?.recipients?.join(', ') || '', Validators.required],
       scheduled_time: [this.data?.scheduled_time || '']
     });
@@ -46,6 +48,7 @@ export class NotificationFormDialogComponent {
       const notificationData: NotificationData = {
         ...formValue,
         recipients: formValue.recipients.split(',').map((r: string) => r.trim()),
+        template: formValue.template,
         id: this.data?.id
       };
       this.dialogRef.close(notificationData);

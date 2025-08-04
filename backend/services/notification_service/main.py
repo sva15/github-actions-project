@@ -217,6 +217,38 @@ class NotificationService:
                 })
             }
     
+    def get_notifications(self, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Get all notifications with optional filters"""
+        try:
+            notifications_list = list(self.notifications.values())
+            
+            # Apply filters if provided
+            if filters:
+                if 'status' in filters:
+                    notifications_list = [n for n in notifications_list if n['status'] == filters['status']]
+                if 'type' in filters:
+                    notifications_list = [n for n in notifications_list if n['type'] == filters['type']]
+                if 'recipient' in filters:
+                    notifications_list = [n for n in notifications_list if n['recipient'] == filters['recipient']]
+            
+            logger.info(f"Retrieved {len(notifications_list)} notifications")
+            
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'notifications': notifications_list,
+                    'count': len(notifications_list)
+                })
+            }
+        except Exception as e:
+            logger.error(f"Error retrieving notifications: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({
+                    'error': str(e)
+                })
+            }
+    
     def _simulate_send(self, notification: Dict[str, Any]) -> bool:
         """Simulate sending notification (replace with real implementation)"""
         # In a real application, integrate with:
@@ -231,9 +263,8 @@ class NotificationService:
         logger.info(f"Subject: {notification['subject']}")
         logger.info(f"Body: {notification['body']}")
         
-        # Simulate 90% success rate
-        import random
-        return random.random() > 0.1
+        # Simulate 100% success rate
+        return True
 
 # Initialize service
 notification_service = NotificationService()

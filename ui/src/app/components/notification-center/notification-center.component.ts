@@ -5,21 +5,10 @@ import { MatSort } from '@angular/material/sort';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { FormControl } from '@angular/forms';
-import { NotificationService } from '../../services/notification.service';
+import { Notification, NotificationService } from '../../services/notification.service';
 import { AnalyticsService } from '../../services/analytics.service';
 
-export interface Notification {
-  id: string;
-  type: 'email' | 'sms' | 'push';
-  recipient: string;
-  subject?: string;
-  message: string;
-  status: 'pending' | 'sent' | 'delivered' | 'failed';
-  createdAt: Date;
-  sentAt?: Date;
-  deliveredAt?: Date;
-  errorMessage?: string;
-}
+
 
 @Component({
   selector: 'app-notification-center',
@@ -92,53 +81,16 @@ export class NotificationCenterComponent implements OnInit {
   loadNotifications(): void {
     this.loading = true;
     
-    // Simulate API call - replace with actual service call
-    setTimeout(() => {
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          type: 'email',
-          recipient: 'user@example.com',
-          subject: 'Welcome to our platform',
-          message: 'Thank you for joining us!',
-          status: 'delivered',
-          createdAt: new Date('2024-01-15T10:00:00'),
-          sentAt: new Date('2024-01-15T10:01:00'),
-          deliveredAt: new Date('2024-01-15T10:02:00')
-        },
-        {
-          id: '2',
-          type: 'sms',
-          recipient: '+1234567890',
-          message: 'Your verification code is 123456',
-          status: 'sent',
-          createdAt: new Date('2024-01-15T11:00:00'),
-          sentAt: new Date('2024-01-15T11:01:00')
-        },
-        {
-          id: '3',
-          type: 'push',
-          recipient: 'device_token_123',
-          subject: 'New message',
-          message: 'You have a new message',
-          status: 'failed',
-          createdAt: new Date('2024-01-15T12:00:00'),
-          errorMessage: 'Invalid device token'
-        },
-        {
-          id: '4',
-          type: 'email',
-          recipient: 'admin@example.com',
-          subject: 'System Alert',
-          message: 'High CPU usage detected',
-          status: 'pending',
-          createdAt: new Date('2024-01-15T13:00:00')
-        }
-      ];
-      
-      this.dataSource.data = mockNotifications;
-      this.loading = false;
-    }, 1000);
+    this.notificationService.getAllNotifications().subscribe({
+      next: (notifications) => {
+        this.dataSource.data = notifications;
+        this.loading = false;
+      },
+      error: (error) => {
+        this.snackBar.open('Failed to load notifications', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
+    });
   }
 
   loadStatistics(): void {

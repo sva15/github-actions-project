@@ -28,6 +28,18 @@
     </mat-form-field>
 
     <mat-form-field class="full-width">
+      <mat-label>Template</mat-label>
+      <mat-select formControlName="template" required>
+        <mat-option *ngFor="let template of templates" [value]="template">
+          {{ template | titlecase }}
+        </mat-option>
+      </mat-select>
+      <mat-error *ngIf="notificationForm.get('template')?.invalid && notificationForm.get('template')?.touched">
+        Template is required
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field class="full-width">
       <mat-label>Recipients</mat-label>
       <input matInput formControlName="recipients" placeholder="Enter recipients (comma-separated)">
       <mat-hint>Separate multiple recipients with commas</mat-hint>

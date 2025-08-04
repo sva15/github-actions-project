@@ -10,11 +10,12 @@ export interface Notification {
   type: 'email' | 'sms' | 'push';
   template: string;
   subject: string;
-  body: string;
-  status: 'pending' | 'sent' | 'failed';
-  created_at: string;
-  sent_at?: string;
-  error_message?: string;
+  message: string; // Renamed from body
+  status: 'pending' | 'sent' | 'delivered' | 'failed'; // Added 'delivered'
+  createdAt: Date; // Renamed from created_at and changed to Date type
+  sentAt?: Date; // Renamed from sent_at and changed to Date type
+  deliveredAt?: Date; // Added for component
+  errorMessage?: string; // Renamed from error_message
 }
 
 export interface SendNotificationRequest {
@@ -43,7 +44,20 @@ export class NotificationService {
   constructor(private http: HttpClient) {}
 
   sendNotification(notificationData: SendNotificationRequest): Observable<Notification> {
-    return this.http.post<NotificationApiResponse<Notification>>(this.baseUrl, notificationData)
+    // Map frontend data to backend's expected format
+    const payload = {
+      recipient: notificationData.recipient,
+      type: notificationData.type,
+      template: notificationData.template || 'welcome', // Default to 'welcome' if not provided
+      variables: {
+        // Include any variables that the template might need
+        name: notificationData.recipient.split('@')[0], // Extract name from email
+        subject: notificationData.subject,
+        message: notificationData.message
+      }
+    };
+
+    return this.http.post<NotificationApiResponse<Notification>>(this.baseUrl, payload)
       .pipe(
         map(response => {
           if (response.notification) {
@@ -82,14 +96,17 @@ export class NotificationService {
   }
 
   getAllNotifications(): Observable<Notification[]> {
-    return this.http.get<NotificationApiResponse<Notification>>(this.baseUrl)
+    return this.http.get<NotificationApiResponse<any>>(this.baseUrl) // Use <any> to handle raw response
       .pipe(
-        map((response): Notification[] => {
-          // For demo purposes, return mock data if no backend
-          if (environment.production === false) {
-            return this.getMockNotifications();
-          }
-          return response.notifications || [];
+        map(response => {
+          const notifications = response.notifications || [];
+          return notifications.map((n: any) => ({
+            ...n,
+            message: n.body, // map body to message
+            createdAt: new Date(n.created_at), // map created_at to createdAt and convert to Date
+            sentAt: n.sent_at ? new Date(n.sent_at) : undefined,
+            errorMessage: n.error_message
+          }));
         }),
         catchError(this.handleError)
       );
@@ -115,10 +132,11 @@ export class NotificationService {
         type: 'email',
         template: 'welcome',
         subject: 'Welcome to our platform!',
-        body: 'Hello John, welcome to our amazing platform!',
+        message: 'Hello John, welcome to our amazing platform!',
         status: 'sent',
-        created_at: '2023-01-01T10:00:00Z',
-        sent_at: '2023-01-01T10:01:00Z'
+        createdAt: new Date('2023-01-01T10:00:00Z'),
+        sentAt: new Date('2023-01-01T10:01:00Z'),
+        deliveredAt: new Date('2023-01-01T10:01:00Z'),
       },
       {
         id: '2',
@@ -126,10 +144,11 @@ export class NotificationService {
         type: 'email',
         template: 'password_reset',
         subject: 'Password Reset Request',
-        body: 'Hello Jane, click here to reset your password',
-        status: 'sent',
-        created_at: '2023-01-02T14:30:00Z',
-        sent_at: '2023-01-02T14:31:00Z'
+        message: 'Hello Jane, click here to reset your password',
+        status: 'delivered',
+        createdAt: new Date('2023-01-02T14:30:00Z'),
+        sentAt: new Date('2023-01-02T14:31:00Z'),
+        deliveredAt: new Date('2023-01-02T14:31:00Z'),
       },
       {
         id: '3',
@@ -137,10 +156,10 @@ export class NotificationService {
         type: 'sms',
         template: 'order_confirmation',
         subject: 'Order Confirmation',
-        body: 'Your order #12345 has been confirmed!',
+        message: 'Your order #12345 has been confirmed!',
         status: 'failed',
-        created_at: '2023-01-03T16:45:00Z',
-        error_message: 'Invalid phone number'
+        createdAt: new Date('2023-01-03T16:45:00Z'),
+        errorMessage: 'Invalid phone number'
       }
     ];
   }
