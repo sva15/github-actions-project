@@ -216,14 +216,14 @@ jobs:
           python -m pip install --upgrade pip
           
           # Install global requirements if exists
-          # if [ -f requirements.txt ]; then
-          #   pip install -r requirements.txt
-          # fi
+           if [ -f requirements.txt ]; then
+             pip install -r requirements.txt
+           fi
           
           # # Install service-specific requirements
-          # if [ -f backend/services/${{ matrix.service }}/requirements.txt ]; then
-          #   pip install -r backend/services/${{ matrix.service }}/requirements.txt
-          # fi
+           if [ -f backend/services/${{ matrix.service }}/requirements.txt ]; then
+             pip install -r backend/services/${{ matrix.service }}/requirements.txt
+           fi
           
           # Install testing and linting tools
           pip install pytest pytest-cov flake8 black isort mypy bandit safety
