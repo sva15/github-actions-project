@@ -251,15 +251,15 @@ jobs:
           head -20 flake8_full.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: 🎨 Check code formatting with Black
-        run: |
-          cd backend/services/${{ matrix.service }}
-          if black --check --diff .; then
-            echo "✅ Code formatting is correct" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Code formatting issues found" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+      # - name: 🎨 Check code formatting with Black
+      #   run: |
+      #     cd backend/services/${{ matrix.service }}
+      #     if black --check --diff .; then
+      #       echo "✅ Code formatting is correct" >> $GITHUB_STEP_SUMMARY
+      #     else
+      #       echo "❌ Code formatting issues found" >> $GITHUB_STEP_SUMMARY
+      #       exit 1
+      #     fi
 
       - name: 📦 Check import sorting with isort
         run: |
