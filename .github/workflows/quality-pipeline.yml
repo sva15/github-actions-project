@@ -46,6 +46,36 @@ jobs:
         run: |
           echo "🔍 Detecting changes in AgenticAI Solution..."
           
+          # First, discover all available backend services dynamically
+          echo "📦 Discovering available backend services..."
+          ALL_BACKEND_SERVICES=""
+          SERVICE_COUNT=0
+          
+          for service_dir in backend/services/*/; do
+            if [ -d "$service_dir" ]; then
+              service_name=$(basename "$service_dir")
+              if [ "$service_name" != ".gitkeep" ]; then
+                # Validate service structure (should have main.py or other expected files)
+                if [ -f "$service_dir/main.py" ] || [ -f "$service_dir/app.py" ] || [ -f "$service_dir/index.js" ]; then
+                  ALL_BACKEND_SERVICES="$ALL_BACKEND_SERVICES $service_name"
+                  SERVICE_COUNT=$((SERVICE_COUNT + 1))
+                  echo "  ✅ Found valid service: $service_name"
+                else
+                  echo "  ⚠️ Skipping '$service_name' - no main entry point found"
+                fi
+              fi
+            fi
+          done
+          
+          ALL_BACKEND_SERVICES=$(echo $ALL_BACKEND_SERVICES | xargs)
+          echo "📊 Discovered $SERVICE_COUNT backend services: $ALL_BACKEND_SERVICES"
+          
+          # Validate that we found at least one service
+          if [ $SERVICE_COUNT -eq 0 ]; then
+            echo "⚠️ Warning: No valid backend services found in backend/services/"
+            echo "Expected structure: backend/services/[service-name]/main.py (or app.py/index.js)"
+          fi
+          
           # Manual service selection support
           if [ ! -z "${{ github.event.inputs.test_services }}" ]; then
             echo "Manual test trigger - specific services: ${{ github.event.inputs.test_services }}"
@@ -58,8 +88,11 @@ jobs:
               service=$(echo $service | xargs)  # trim whitespace
               if [ "$service" = "frontend" ] || [ "$service" = "ui" ]; then
                 FRONTEND_CHANGED="true"
-              else
+              elif echo " $ALL_BACKEND_SERVICES " | grep -q " $service "; then
                 BACKEND_SERVICES="$BACKEND_SERVICES $service"
+                echo "  ✅ Manual service selected: $service"
+              else
+                echo "  ⚠️ Warning: Service '$service' not found in backend/services/"
               fi
             done
           else
@@ -95,7 +128,9 @@ jobs:
             # Detect shared changes (run all tests)
             if echo "$CHANGED_FILES" | grep -qE "^(tests/|\.github/|requirements\.txt|package\.json|\.eslintrc|\.prettierrc|sonar-project\.properties)"; then
               echo "✅ Shared files changed - testing all services"
-              BACKEND_SERVICES="commfunctions retrieveData storeData"
+              # Use the already discovered services list
+              BACKEND_SERVICES="$ALL_BACKEND_SERVICES"
+              echo "📦 Testing all discovered services: $BACKEND_SERVICES"
               FRONTEND_CHANGED="true"
             fi
           fi
@@ -125,9 +160,19 @@ jobs:
           echo "backend-services=$BACKEND_SERVICES" >> $GITHUB_OUTPUT
           echo "frontend-changed=$FRONTEND_CHANGED" >> $GITHUB_OUTPUT
           echo "test-matrix=$TEST_MATRIX" >> $GITHUB_OUTPUT
+          echo "all-backend-services=$ALL_BACKEND_SERVICES" >> $GITHUB_OUTPUT
+          echo "service-count=$SERVICE_COUNT" >> $GITHUB_OUTPUT
+          
+          # Summary
+          echo "📊 Final Detection Summary:"
+          echo "  Backend services to test: $BACKEND_SERVICES"
+          echo "  Frontend changed: $FRONTEND_CHANGED"
+          echo "  Test matrix: $TEST_MATRIX"
+          echo "  Total available services: $SERVICE_COUNT"
           
           if [ ! -z "$BACKEND_SERVICES" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
             echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "✅ Changes detected - pipeline will proceed"
             echo "🚀 Changes detected - proceeding with quality checks"
           else
             echo "has-changes=false" >> $GITHUB_OUTPUT
