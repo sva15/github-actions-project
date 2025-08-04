@@ -346,6 +346,8 @@ jobs:
         run: |
           cd ui
           npm ci
+          ng add @angular-eslint/schematics
+          npx ng g @angular-eslint/schematics:convert-tslint-to-eslint
 
       - name: 🔍 Lint with ESLint
         run: |
