@@ -353,7 +353,7 @@ jobs:
           echo "## 🔍 Frontend Linting Results" >> $GITHUB_STEP_SUMMARY
           
           # Run ESLint and capture output
-          if npm run lint -- --format=json --output-file=eslint_report.json; then
+          if npm run lint:json -- --format=json --output-file=eslint_report.json; then
             echo "✅ No linting errors found" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Linting errors found" >> $GITHUB_STEP_SUMMARY
