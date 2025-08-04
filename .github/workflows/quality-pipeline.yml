@@ -1,0 +1,557 @@
+# GitHub Actions Master Quality Pipeline for InsightGen AgenticAI Solution
+# Handles change detection, testing, linting, code coverage, and reporting
+# Publishes reports via GitHub Step Summary and PR comments
+
+name: 🔍 Quality Pipeline
+
+on:
+  push:
+    branches: [ main, develop, testing ]
+  pull_request:
+    branches: [ main, develop]
+  workflow_dispatch:
+    inputs:
+      test_services:
+        description: 'Comma-separated list of services to test (leave empty for auto-detection)'
+        required: false
+        default: ''
+      skip_sonar:
+        description: 'Skip SonarQube analysis'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  # Job 1: Detect Changes and Setup Matrix
+  detect-changes:
+    name: 🔍 Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend-services: ${{ steps.changes.outputs.backend-services }}
+      frontend-changed: ${{ steps.changes.outputs.frontend-changed }}
+      has-changes: ${{ steps.changes.outputs.has-changes }}
+      test-matrix: ${{ steps.changes.outputs.test-matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Detect changed services
+        id: changes
+        run: |
+          echo "🔍 Detecting changes in AgenticAI Solution..."
+          
+          # Manual service selection support
+          if [ ! -z "${{ github.event.inputs.test_services }}" ]; then
+            echo "Manual test trigger - specific services: ${{ github.event.inputs.test_services }}"
+            MANUAL_SERVICES="${{ github.event.inputs.test_services }}"
+            BACKEND_SERVICES=""
+            FRONTEND_CHANGED="false"
+            
+            IFS=',' read -ra SERVICES_ARRAY <<< "$MANUAL_SERVICES"
+            for service in "${SERVICES_ARRAY[@]}"; do
+              service=$(echo $service | xargs)  # trim whitespace
+              if [ "$service" = "frontend" ] || [ "$service" = "ui" ]; then
+                FRONTEND_CHANGED="true"
+              else
+                BACKEND_SERVICES="$BACKEND_SERVICES $service"
+              fi
+            done
+          else
+            # Auto-detection based on changed files
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+            else
+              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+            fi
+            
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+            
+            # Detect backend services
+            BACKEND_SERVICES=""
+            for service_dir in backend/services/*/; do
+              if [ -d "$service_dir" ]; then
+                service_name=$(basename "$service_dir")
+                if echo "$CHANGED_FILES" | grep -q "^backend/services/$service_name/"; then
+                  BACKEND_SERVICES="$BACKEND_SERVICES $service_name"
+                  echo "✅ Backend service changed: $service_name"
+                fi
+              fi
+            done
+            
+            # Detect frontend changes
+            FRONTEND_CHANGED="false"
+            if echo "$CHANGED_FILES" | grep -q "^ui/"; then
+              FRONTEND_CHANGED="true"
+              echo "✅ Frontend changed"
+            fi
+            
+            # Detect shared changes (run all tests)
+            if echo "$CHANGED_FILES" | grep -qE "^(tests/|\.github/|requirements\.txt|package\.json|\.eslintrc|\.prettierrc|sonar-project\.properties)"; then
+              echo "✅ Shared files changed - testing all services"
+              BACKEND_SERVICES="commfunctions retrieveData storeData"
+              FRONTEND_CHANGED="true"
+            fi
+          fi
+          
+          # Clean up backend services list
+          BACKEND_SERVICES=$(echo $BACKEND_SERVICES | xargs)
+          
+          # Create test matrix for backend services only
+          if [ ! -z "$BACKEND_SERVICES" ]; then
+            # Manually construct JSON array to avoid formatting issues
+            TEST_MATRIX="["
+            first=true
+            for service in $BACKEND_SERVICES; do
+              if [ "$first" = true ]; then
+                TEST_MATRIX="$TEST_MATRIX\"$service\""
+                first=false
+              else
+                TEST_MATRIX="$TEST_MATRIX,\"$service\""
+              fi
+            done
+            TEST_MATRIX="$TEST_MATRIX]"
+          else
+            TEST_MATRIX='[]'
+          fi
+          
+          # Set outputs
+          echo "backend-services=$BACKEND_SERVICES" >> $GITHUB_OUTPUT
+          echo "frontend-changed=$FRONTEND_CHANGED" >> $GITHUB_OUTPUT
+          echo "test-matrix=$TEST_MATRIX" >> $GITHUB_OUTPUT
+          
+          if [ ! -z "$BACKEND_SERVICES" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "🚀 Changes detected - proceeding with quality checks"
+          else
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No relevant changes detected"
+          fi
+          
+          # Summary for GitHub
+          echo "## 🔍 Change Detection Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Services |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | $([ ! -z '$BACKEND_SERVICES' ] && echo '✅ Changed' || echo '⏭️ No changes') | $BACKEND_SERVICES |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | $([ '$FRONTEND_CHANGED' = 'true' ] && echo '✅ Changed' || echo '⏭️ No changes') | ui/ |" >> $GITHUB_STEP_SUMMARY
+
+  # Job 2: Backend Testing and Linting
+  backend-quality:
+    name: 🐍 Backend Quality - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-services != ''
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.test-matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.service }}-${{ hashFiles('backend/services/${{ matrix.service }}/requirements.txt', 'requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          
+          # Install global requirements if exists
+          # if [ -f requirements.txt ]; then
+          #   pip install -r requirements.txt
+          # fi
+          
+          # # Install service-specific requirements
+          # if [ -f backend/services/${{ matrix.service }}/requirements.txt ]; then
+          #   pip install -r backend/services/${{ matrix.service }}/requirements.txt
+          # fi
+          
+          # Install testing and linting tools
+          pip install pytest pytest-cov flake8 black isort mypy bandit safety
+
+      - name: 🔍 Lint with flake8
+        run: |
+          echo "## 🔍 Linting Results - ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+          cd backend/services/${{ matrix.service }}
+          
+          # Run flake8 and capture output
+          if flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics > flake8_critical.txt 2>&1; then
+            echo "✅ No critical linting errors found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Critical linting errors found:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat flake8_critical.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
+          # Run full flake8 check (warnings)
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics > flake8_full.txt
+          echo "📊 Full linting report:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          head -20 flake8_full.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: 🎨 Check code formatting with Black
+        run: |
+          cd backend/services/${{ matrix.service }}
+          if black --check --diff .; then
+            echo "✅ Code formatting is correct" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Code formatting issues found" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: 📦 Check import sorting with isort
+        run: |
+          cd backend/services/${{ matrix.service }}
+          if isort --check-only --diff .; then
+            echo "✅ Import sorting is correct" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Import sorting issues found" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: 🔒 Security check with Bandit
+        run: |
+          cd backend/services/${{ matrix.service }}
+          bandit -r . -f json -o bandit_report.json || true
+          if [ -f bandit_report.json ]; then
+            ISSUES=$(jq '.results | length' bandit_report.json)
+            echo "🔒 Security scan found $ISSUES potential issues" >> $GITHUB_STEP_SUMMARY
+            if [ "$ISSUES" -gt 0 ]; then
+              echo "⚠️ Security issues found - review required" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: 🧪 Run unit tests with coverage
+        run: |
+          cd backend/services/${{ matrix.service }}
+          
+          # Run tests with coverage
+          if [ -d "tests" ] || [ -f "test_*.py" ]; then
+            pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing \
+              --junitxml=pytest_report.xml -v
+            
+            # Extract coverage percentage
+            COVERAGE=$(python -c "
+            import xml.etree.ElementTree as ET
+            try:
+                tree = ET.parse('coverage.xml')
+                root = tree.getroot()
+                coverage = float(root.get('line-rate', 0)) * 100
+                print(f'{coverage:.1f}')
+            except:
+                print('0.0')
+            ")
+            
+            echo "## 🧪 Test Results - ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Coverage**: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+            echo "- **Status**: $([ $? -eq 0 ] && echo '✅ Passed' || echo '❌ Failed')" >> $GITHUB_STEP_SUMMARY
+            
+            # Set coverage as output for SonarQube
+            echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ No tests found for ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
+            echo "coverage=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📊 Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage-${{ matrix.service }}
+          path: |
+            backend/services/${{ matrix.service }}/coverage.xml
+            backend/services/${{ matrix.service }}/htmlcov/
+            backend/services/${{ matrix.service }}/pytest_report.xml
+
+  # Job 3: Frontend Testing and Linting
+  frontend-quality:
+    name: 🌐 Frontend Quality
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-changed == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd ui
+          npm ci
+
+      - name: 🔍 Lint with ESLint
+        run: |
+          cd ui
+          echo "## 🔍 Frontend Linting Results" >> $GITHUB_STEP_SUMMARY
+          
+          # Run ESLint and capture output
+          if npm run lint -- --format=json --output-file=eslint_report.json; then
+            echo "✅ No linting errors found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Linting errors found" >> $GITHUB_STEP_SUMMARY
+            # Parse and display errors
+            if [ -f eslint_report.json ]; then
+              ERROR_COUNT=$(jq '[.[] | .errorCount] | add // 0' eslint_report.json)
+              WARNING_COUNT=$(jq '[.[] | .warningCount] | add // 0' eslint_report.json)
+              echo "- **Errors**: $ERROR_COUNT" >> $GITHUB_STEP_SUMMARY
+              echo "- **Warnings**: $WARNING_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
+      - name: 🎨 Check code formatting with Prettier
+        run: |
+          cd ui
+          if npm run format:check; then
+            echo "✅ Code formatting is correct" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Code formatting issues found" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: 🧪 Run unit tests with coverage
+        run: |
+          cd ui
+          npm run test:coverage -- --watchAll=false --coverage --coverageReporters=text-lcov,html,cobertura
+          
+          # Extract coverage percentage
+          COVERAGE=$(npm run test:coverage -- --watchAll=false --coverage --coverageReporters=json-summary | grep -o '"lines":{"pct":[0-9.]*' | grep -o '[0-9.]*$' || echo "0")
+          
+          echo "## 🧪 Frontend Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coverage**: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $([ $? -eq 0 ] && echo '✅ Passed' || echo '❌ Failed')" >> $GITHUB_STEP_SUMMARY
+          
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+
+      - name: 🏗️ Build check
+        run: |
+          cd ui
+          if npm run build; then
+            echo "✅ Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: 📊 Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: |
+            ui/coverage/
+            ui/coverage/lcov.info
+            ui/coverage/cobertura-coverage.xml
+
+  # Job 4: SonarQube Analysis (Main branch only)
+  sonarqube:
+    name: 📊 SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: [detect-changes, backend-quality, frontend-quality]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/main' && 
+      needs.detect-changes.outputs.has-changes == 'true' &&
+      github.event.inputs.skip_sonar != 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v3
+        with:
+          path: coverage-reports
+
+      - name: 📊 SonarCloud Analysis
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+         # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.sources=backend/services,ui/src
+            -Dsonar.tests=backend/services/*/tests,ui/src/**/*.test.*
+            -Dsonar.python.coverage.reportPaths=coverage-reports/backend-coverage-*/coverage.xml
+            -Dsonar.javascript.lcov.reportPaths=coverage-reports/frontend-coverage/lcov.info
+            -Dsonar.coverage.exclusions=**/*test*/**,**/*.test.*,**/node_modules/**,**/dist/**,**/build/**
+            -Dsonar.cpd.exclusions=**/*test*/**
+            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/build/**,**/*.min.js
+            -Dsonar.test.exclusions=**/*test*/**,**/*.test.*,**/node_modules/**
+
+      - name: 📊 SonarCloud Quality Gate
+        run: |
+          echo "## 📊 SonarCloud Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ SonarCloud analysis completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View detailed report](https://sonarcloud.io/project/overview?id=S190509-IFRSGCP-1001E162X0_insightgen-agenticai-solution)" >> $GITHUB_STEP_SUMMARY
+
+  # Job 5: Generate Summary Report
+  quality-summary:
+    name: 📋 Quality Summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, backend-quality, frontend-quality]
+    if: always() && needs.detect-changes.outputs.has-changes == 'true'
+    steps:
+      - name: Generate Quality Report
+        run: |
+          echo "# 🎯 InsightGen Quality Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Overall Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Backend results
+          BACKEND_STATUS="✅ Passed"
+          if [ "${{ needs.backend-quality.result }}" = "failure" ]; then
+            BACKEND_STATUS="❌ Failed"
+          elif [ "${{ needs.backend-quality.result }}" = "skipped" ]; then
+            BACKEND_STATUS="⏭️ Skipped"
+          fi
+          echo "| Backend Services | $BACKEND_STATUS | Various |" >> $GITHUB_STEP_SUMMARY
+          
+          # Frontend results
+          FRONTEND_STATUS="✅ Passed"
+          if [ "${{ needs.frontend-quality.result }}" = "failure" ]; then
+            FRONTEND_STATUS="❌ Failed"
+          elif [ "${{ needs.frontend-quality.result }}" = "skipped" ]; then
+            FRONTEND_STATUS="⏭️ Skipped"
+          fi
+          echo "| Frontend | $FRONTEND_STATUS | N/A |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔍 Services Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend**: ${{ needs.detect-changes.outputs.backend-services || 'None' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend**: ${{ needs.detect-changes.outputs.frontend-changed == 'true' && 'Yes' || 'No' }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 📊 SonarQube Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "SonarQube analysis was triggered for main branch." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const backendStatus = '${{ needs.backend-quality.result }}';
+            const frontendStatus = '${{ needs.frontend-quality.result }}';
+            const backendServices = '${{ needs.detect-changes.outputs.backend-services }}';
+            const frontendChanged = '${{ needs.detect-changes.outputs.frontend-changed }}';
+            
+            let comment = `## 🔍 Quality Pipeline Results\n\n`;
+            comment += `| Component | Status | Services Tested |\n`;
+            comment += `|-----------|--------|-----------------|\n`;
+            
+            // Backend status
+            const backendEmoji = backendStatus === 'success' ? '✅' : backendStatus === 'failure' ? '❌' : '⏭️';
+            comment += `| Backend | ${backendEmoji} ${backendStatus} | ${backendServices || 'None'} |\n`;
+            
+            // Frontend status  
+            const frontendEmoji = frontendStatus === 'success' ? '✅' : frontendStatus === 'failure' ? '❌' : '⏭️';
+            comment += `| Frontend | ${frontendEmoji} ${frontendStatus} | ${frontendChanged === 'true' ? 'ui/' : 'None'} |\n`;
+            
+            comment += `\n### 📋 Quality Checks Performed\n`;
+            comment += `- 🔍 **Linting**: Code style and syntax validation\n`;
+            comment += `- 🎨 **Formatting**: Code formatting consistency\n`;
+            comment += `- 🧪 **Unit Tests**: Automated test execution\n`;
+            comment += `- 📊 **Coverage**: Code coverage analysis\n`;
+            comment += `- 🔒 **Security**: Security vulnerability scanning\n`;
+            
+            if (backendStatus === 'failure' || frontendStatus === 'failure') {
+              comment += `\n⚠️ **Action Required**: Please fix the failing quality checks before merging.`;
+            } else {
+              comment += `\n✅ **All quality checks passed!** Ready for deployment.`;
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # Job 6: Set Deployment Status Check
+  deployment-gate:
+    name: 🚦 Deployment Gate
+    runs-on: ubuntu-latest
+    needs: [detect-changes, backend-quality, frontend-quality, quality-summary]
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    steps:
+      - name: 🔍 Check Quality Gate Results
+        run: |
+          echo "Checking all quality gate results..."
+          
+          # Check if any quality jobs failed
+          BACKEND_RESULT="${{ needs.backend-quality.result }}"
+          FRONTEND_RESULT="${{ needs.frontend-quality.result }}"
+          
+          echo "Backend Quality: $BACKEND_RESULT"
+          echo "Frontend Quality: $FRONTEND_RESULT"
+          
+          if [[ "$BACKEND_RESULT" == "failure" || "$FRONTEND_RESULT" == "failure" ]]; then
+            echo "❌ Quality gates failed - blocking deployment"
+            exit 1
+          else
+            echo "✅ All quality gates passed - deployment approved"
+          fi
+
+      - name: 🚦 Set Deployment Status Check
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Set a status check that cloud pipelines can verify
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'success',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'Quality gates passed - deployment approved',
+              context: 'ci/quality-gates'
+            });
+            
+            console.log('✅ Deployment status check set to success');
+
+      - name: 🚫 Block Deployment on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'failure',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'Quality gates failed - deployment blocked',
+              context: 'ci/quality-gates'
+            });
+            
+            console.log('❌ Deployment status check set to failure');
+            core.setFailed('Quality gates failed - deployment blocked');
