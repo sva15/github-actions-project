@@ -1,4 +1,4 @@
-name: Detect Directory Changes
+name: CI/CD Pipeline with Change Detection
 
 on:
   push:
@@ -206,33 +206,33 @@ jobs:
         # Format check with black
         echo "Checking code formatting..."
         if black --check "${{ matrix.directory }}" 2>&1; then
-          BLACK_STATUS="✅ PASSED"
+          BLACK_STATUS="PASSED"
         else
-          BLACK_STATUS="❌ FAILED"
+          BLACK_STATUS="FAILED"
         fi
         
         # Import sorting check
         echo "Checking import sorting..."
         if isort --check-only "${{ matrix.directory }}" 2>&1; then
-          ISORT_STATUS="✅ PASSED"
+          ISORT_STATUS="PASSED"
         else
-          ISORT_STATUS="❌ FAILED"
+          ISORT_STATUS="FAILED"
         fi
         
         # Linting with flake8
         echo "Running linter..."
         if flake8 "${{ matrix.directory }}" --format='%(path)s:%(row)d:%(col)d: %(code)s %(text)s' 2>&1; then
-          FLAKE8_STATUS="✅ PASSED"
+          FLAKE8_STATUS="PASSED"
         else
-          FLAKE8_STATUS="❌ FAILED"
+          FLAKE8_STATUS="FAILED"
         fi
         
         # Type checking with mypy
         echo "Running type checker..."
         if mypy "${{ matrix.directory }}" 2>&1; then
-          MYPY_STATUS="✅ PASSED"
+          MYPY_STATUS="PASSED"
         else
-          MYPY_STATUS="❌ FAILED"
+          MYPY_STATUS="FAILED"
         fi
         
         # Store results for summary
@@ -301,9 +301,9 @@ jobs:
         if [ "$COVERAGE" != "N/A" ]; then
           COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
           if (( $(echo "$COVERAGE_NUM > 90" | bc -l) )); then
-            COVERAGE_STATUS="✅ PASSED ($COVERAGE%)"
+            COVERAGE_STATUS="PASSED ($COVERAGE%)"
           else
-            COVERAGE_STATUS="❌ FAILED ($COVERAGE%)"
+            COVERAGE_STATUS="FAILED ($COVERAGE%)"
           fi
         else
           COVERAGE_STATUS="N/A"
@@ -387,9 +387,9 @@ jobs:
         
         # Run tests with coverage
         if npm test -- --coverage --watchAll=false --coverageReporters=text-lcov,xml 2>&1; then
-          TEST_STATUS="✅ PASSED"
+          TEST_STATUS="PASSED"
         else
-          TEST_STATUS="❌ FAILED"
+          TEST_STATUS="FAILED"
         fi
         
         # Store test status
@@ -420,9 +420,9 @@ jobs:
         if [ "$COVERAGE" != "N/A" ]; then
           COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
           if (( $(echo "$COVERAGE_NUM > 90" | bc -l) )); then
-            COVERAGE_STATUS="✅ PASSED ($COVERAGE%)"
+            COVERAGE_STATUS="PASSED ($COVERAGE%)"
           else
-            COVERAGE_STATUS="❌ FAILED ($COVERAGE%)"
+            COVERAGE_STATUS="FAILED ($COVERAGE%)"
           fi
         else
           COVERAGE_STATUS="N/A"
@@ -463,6 +463,24 @@ jobs:
           projectBaseDir: ${{ matrix.directory }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: 600
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Show SonarQube Quality Gate Status
+        run: |
+          QG_STATUS="${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
+          echo "## SonarQube Quality Gate: \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Quality Gate Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.directory }} | $QG_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
   sonarqube-scan-ui:
     name: SonarQube Scan - UI
@@ -482,6 +500,24 @@ jobs:
           projectBaseDir: ui
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check-ui
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: 600
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Show SonarQube Quality Gate Status
+        run: |
+          QG_STATUS="${{ steps.sonarqube-quality-gate-check-ui.outputs.quality-gate-status }}"
+          echo "## SonarQube Quality Gate: \`ui\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Quality Gate Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ui | $QG_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
   # Job that runs when no relevant changes are detected
   no-changes-job:
