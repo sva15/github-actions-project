@@ -1,0 +1,471 @@
+name: Manual CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_directories:
+        description: 'Comma-separated list of directories to test (e.g., backend/services/auth,backend/agents/chatbot,ui)'
+        required: false
+        default: 'all'
+        type: string
+      run_sonarqube:
+        description: 'Run SonarQube analysis'
+        required: false
+        default: true
+        type: boolean
+      coverage_threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        default: '90'
+        type: string
+
+jobs:
+  prepare-manual-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      backend-matrix: ${{ steps.set-matrix.outputs.backend-matrix }}
+      ui-matrix: ${{ steps.set-matrix.outputs.ui-matrix }}
+      run-backend: ${{ steps.set-matrix.outputs.run-backend }}
+      run-ui: ${{ steps.set-matrix.outputs.run-ui }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Generate test matrix
+      id: set-matrix
+      run: |
+        TARGET_DIRS="${{ github.event.inputs.target_directories }}"
+        
+        # Initialize matrices
+        BACKEND_DIRS=""
+        UI_DIRS=""
+        RUN_BACKEND=false
+        RUN_UI=false
+        
+        if [ "$TARGET_DIRS" == "all" ]; then
+          # Find all backend services and agents
+          if [ -d "backend/services" ]; then
+            for dir in backend/services/*/; do
+              if [ -d "$dir" ]; then
+                SERVICE_NAME=$(basename "$dir")
+                BACKEND_DIRS="${BACKEND_DIRS:+$BACKEND_DIRS,}\"backend/services/$SERVICE_NAME\""
+                RUN_BACKEND=true
+              fi
+            done
+          fi
+          
+          if [ -d "backend/agents" ]; then
+            for dir in backend/agents/*/; do
+              if [ -d "$dir" ]; then
+                AGENT_NAME=$(basename "$dir")
+                BACKEND_DIRS="${BACKEND_DIRS:+$BACKEND_DIRS,}\"backend/agents/$AGENT_NAME\""
+                RUN_BACKEND=true
+              fi
+            done
+          fi
+          
+          if [ -d "ui" ]; then
+            UI_DIRS="\"ui\""
+            RUN_UI=true
+          fi
+        else
+          # Parse specific directories
+          IFS=',' read -ra DIRS <<< "$TARGET_DIRS"
+          for dir in "${DIRS[@]}"; do
+            dir=$(echo "$dir" | xargs)  # trim whitespace
+            if [[ "$dir" == backend/services/* ]] || [[ "$dir" == backend/agents/* ]]; then
+              BACKEND_DIRS="${BACKEND_DIRS:+$BACKEND_DIRS,}\"$dir\""
+              RUN_BACKEND=true
+            elif [[ "$dir" == "ui" ]]; then
+              UI_DIRS="\"ui\""
+              RUN_UI=true
+            fi
+          done
+        fi
+        
+        # Generate JSON matrices
+        if [ "$RUN_BACKEND" == "true" ]; then
+          BACKEND_MATRIX="{\"directory\":[$BACKEND_DIRS]}"
+        else
+          BACKEND_MATRIX="{\"directory\":[]}"
+        fi
+        
+        if [ "$RUN_UI" == "true" ]; then
+          UI_MATRIX="{\"directory\":[$UI_DIRS]}"
+        else
+          UI_MATRIX="{\"directory\":[]}"
+        fi
+        
+        echo "Backend matrix: $BACKEND_MATRIX"
+        echo "UI matrix: $UI_MATRIX"
+        echo "Run backend: $RUN_BACKEND"
+        echo "Run UI: $RUN_UI"
+        
+        echo "backend-matrix=$BACKEND_MATRIX" >> $GITHUB_OUTPUT
+        echo "ui-matrix=$UI_MATRIX" >> $GITHUB_OUTPUT
+        echo "run-backend=$RUN_BACKEND" >> $GITHUB_OUTPUT
+        echo "run-ui=$RUN_UI" >> $GITHUB_OUTPUT
+
+  manual-backend-tests:
+    needs: prepare-manual-matrix
+    runs-on: ubuntu-latest
+    if: needs.prepare-manual-matrix.outputs.run-backend == 'true'
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-manual-matrix.outputs.backend-matrix) }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        
+        # Install project-specific requirements if they exist
+        if [ -f "${{ matrix.directory }}/requirements.txt" ]; then
+          pip install -r "${{ matrix.directory }}/requirements.txt"
+        fi
+        
+        # Install testing dependencies
+        pip install pytest pytest-cov flake8 black isort mypy
+    
+    - name: Code quality checks
+      run: |
+        echo "Running code quality checks for ${{ matrix.directory }}"
+        
+        # Format check with black
+        echo "Checking code formatting..."
+        if black --check "${{ matrix.directory }}" 2>&1; then
+          BLACK_STATUS="PASSED"
+        else
+          BLACK_STATUS="FAILED"
+        fi
+        
+        # Import sorting check
+        echo "Checking import sorting..."
+        if isort --check-only "${{ matrix.directory }}" 2>&1; then
+          ISORT_STATUS="PASSED"
+        else
+          ISORT_STATUS="FAILED"
+        fi
+        
+        # Linting with flake8
+        echo "Running linter..."
+        if flake8 "${{ matrix.directory }}" --format='%(path)s:%(row)d:%(col)d: %(code)s %(text)s' 2>&1; then
+          FLAKE8_STATUS="PASSED"
+        else
+          FLAKE8_STATUS="FAILED"
+        fi
+        
+        # Type checking with mypy
+        echo "Running type checker..."
+        if mypy "${{ matrix.directory }}" 2>&1; then
+          MYPY_STATUS="PASSED"
+        else
+          MYPY_STATUS="FAILED"
+        fi
+        
+        # Store results for summary
+        echo "BLACK_STATUS=$BLACK_STATUS" >> $GITHUB_ENV
+        echo "ISORT_STATUS=$ISORT_STATUS" >> $GITHUB_ENV
+        echo "FLAKE8_STATUS=$FLAKE8_STATUS" >> $GITHUB_ENV
+        echo "MYPY_STATUS=$MYPY_STATUS" >> $GITHUB_ENV
+    
+    - name: Run tests
+      run: |
+        echo "Running tests for ${{ matrix.directory }}"
+        
+        # Run pytest with coverage
+        if [ -d "${{ matrix.directory }}/tests" ]; then
+          if pytest "${{ matrix.directory }}/tests" \
+            --cov="${{ matrix.directory }}" \
+            --cov-branch \
+            --cov-report=xml:coverage-${{ matrix.directory }}.xml \
+            --cov-report=term-missing \
+            -v 2>&1; then
+            TEST_STATUS="PASSED"
+          else
+            TEST_STATUS="FAILED"
+          fi
+        else
+          if find "${{ matrix.directory }}" -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            if pytest "${{ matrix.directory }}" \
+              --cov="${{ matrix.directory }}" \
+              --cov-branch \
+              --cov-report=xml:coverage-${{ matrix.directory }}.xml \
+              --cov-report=term-missing \
+              -v 2>&1; then
+              TEST_STATUS="PASSED"
+            else
+              TEST_STATUS="FAILED"
+            fi
+          else
+            TEST_STATUS="NO_TESTS"
+          fi
+        fi
+        
+        # Store test status for summary
+        echo "TEST_STATUS=$TEST_STATUS" >> $GITHUB_ENV
+    
+    - name: Generate summary report
+      if: always()
+      run: |
+        # Parse coverage from XML
+        if [ -f "coverage-${{ matrix.directory }}.xml" ]; then
+          COVERAGE=$(python3 -c "
+        import xml.etree.ElementTree as ET
+        try:
+            tree = ET.parse('coverage-${{ matrix.directory }}.xml')
+            root = tree.getroot()
+            coverage = root.attrib.get('line-rate', '0')
+            percentage = float(coverage) * 100
+            print(f'{percentage:.1f}')
+        except:
+            print('0.0')
+        ")
+        else
+          COVERAGE="N/A"
+        fi
+        
+        # Validate coverage against threshold
+        THRESHOLD="${{ github.event.inputs.coverage_threshold }}"
+        if [ "$COVERAGE" != "N/A" ]; then
+          COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
+          if (( $(echo "$COVERAGE_NUM > $THRESHOLD" | bc -l) )); then
+            COVERAGE_STATUS="PASSED ($COVERAGE%)"
+          else
+            COVERAGE_STATUS="FAILED ($COVERAGE%)"
+          fi
+        else
+          COVERAGE_STATUS="N/A"
+        fi
+        
+        # Generate professional summary tables
+        echo "## Test Results: \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Formatting | $BLACK_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Import Sorting | $ISORT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Linting | $FLAKE8_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Type Checking | $MYPY_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | $TEST_STATUS | $COVERAGE_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+  manual-ui-tests:
+    needs: prepare-manual-matrix
+    runs-on: ubuntu-latest
+    if: needs.prepare-manual-matrix.outputs.run-ui == 'true'
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-manual-matrix.outputs.ui-matrix) }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'ui/package-lock.json'
+    
+    - name: Install dependencies
+      run: |
+        cd ui
+        npm ci
+    
+    - name: Code quality checks
+      run: |
+        cd ui
+        echo "Running code quality checks for UI"
+        
+        # ESLint check
+        echo "Running ESLint..."
+        if npm run lint 2>&1; then
+          ESLINT_STATUS="PASSED"
+        else
+          ESLINT_STATUS="FAILED"
+        fi
+        
+        # Prettier check
+        echo "Checking code formatting with Prettier..."
+        if npm run format:check 2>&1; then
+          PRETTIER_STATUS="PASSED"
+        else
+          PRETTIER_STATUS="FAILED"
+        fi
+        
+        # TypeScript check (if applicable)
+        echo "Running TypeScript check..."
+        if npm run type-check 2>&1; then
+          TYPESCRIPT_STATUS="PASSED"
+        else
+          TYPESCRIPT_STATUS="FAILED"
+        fi
+        
+        # Store quality check results
+        echo "ESLINT_STATUS=$ESLINT_STATUS" >> $GITHUB_ENV
+        echo "PRETTIER_STATUS=$PRETTIER_STATUS" >> $GITHUB_ENV
+        echo "TYPESCRIPT_STATUS=$TYPESCRIPT_STATUS" >> $GITHUB_ENV
+    
+    - name: Run tests
+      run: |
+        cd ui
+        echo "Running tests for UI"
+        
+        # Run tests with coverage
+        if npm test -- --coverage --watchAll=false --coverageReporters=text-lcov,xml 2>&1; then
+          TEST_STATUS="PASSED"
+        else
+          TEST_STATUS="FAILED"
+        fi
+        
+        # Store test status
+        echo "TEST_STATUS=$TEST_STATUS" >> $GITHUB_ENV
+    
+    - name: Generate summary report
+      if: always()
+      run: |
+        cd ui
+        
+        # Parse coverage from coverage-summary.json
+        if [ -f "coverage/coverage-summary.json" ]; then
+          COVERAGE=$(node -e "
+            const fs = require('fs');
+            try {
+              const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+              const linesCoverage = summary.total.lines.pct;
+              console.log(linesCoverage.toFixed(1));
+            } catch (e) {
+              console.log('0.0');
+            }
+          ")
+        else
+          COVERAGE="N/A"
+        fi
+        
+        # Validate coverage against threshold
+        THRESHOLD="${{ github.event.inputs.coverage_threshold }}"
+        if [ "$COVERAGE" != "N/A" ]; then
+          COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
+          if (( $(echo "$COVERAGE_NUM > $THRESHOLD" | bc -l) )); then
+            COVERAGE_STATUS="PASSED ($COVERAGE%)"
+          else
+            COVERAGE_STATUS="FAILED ($COVERAGE%)"
+          fi
+        else
+          COVERAGE_STATUS="N/A"
+        fi
+        
+        # Generate professional summary tables
+        echo "## Test Results: \`ui\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ESLint | $ESLINT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Formatting | $PRETTIER_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Type Checking | $TYPESCRIPT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | $TEST_STATUS | $COVERAGE_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+  manual-sonarqube-backend:
+    name: Manual SonarQube Scan - Backend
+    needs: [prepare-manual-matrix, manual-backend-tests]
+    if: needs.prepare-manual-matrix.outputs.run-backend == 'true' && github.event.inputs.run_sonarqube == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-manual-matrix.outputs.backend-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.0
+        with:
+          projectBaseDir: ${{ matrix.directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: 600
+          scanMetadataReportFile: ${{ matrix.directory }}/.scannerwork/report-task.txt
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Show SonarQube Quality Gate Status
+        run: |
+          QG_STATUS="${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
+          echo "## SonarQube Quality Gate: \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Quality Gate Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.directory }} | $QG_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  manual-sonarqube-ui:
+    name: Manual SonarQube Scan - UI
+    needs: [prepare-manual-matrix, manual-ui-tests]
+    if: needs.prepare-manual-matrix.outputs.run-ui == 'true' && github.event.inputs.run_sonarqube == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-manual-matrix.outputs.ui-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.0
+        with:
+          projectBaseDir: ${{ matrix.directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: 600
+          scanMetadataReportFile: ${{ matrix.directory }}/.scannerwork/report-task.txt
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Show SonarQube Quality Gate Status
+        run: |
+          QG_STATUS="${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
+          echo "## SonarQube Quality Gate: \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Quality Gate Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.directory }} | $QG_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  manual-summary:
+    needs: [prepare-manual-matrix, manual-backend-tests, manual-ui-tests, manual-sonarqube-backend, manual-sonarqube-ui]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Manual Pipeline Summary
+      run: |
+        echo "## Manual CI/CD Pipeline Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Target Directories:** ${{ github.event.inputs.target_directories }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Coverage Threshold:** ${{ github.event.inputs.coverage_threshold }}%" >> $GITHUB_STEP_SUMMARY
+        echo "**SonarQube Analysis:** ${{ github.event.inputs.run_sonarqube }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
