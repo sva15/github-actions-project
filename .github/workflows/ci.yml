@@ -2,9 +2,9 @@ name: CI/CD Pipeline with Change Detection
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   detect-changes:
@@ -354,25 +354,25 @@ jobs:
         # ESLint check
         echo "Running ESLint..."
         if npm run lint 2>&1; then
-          ESLINT_STATUS="✅ PASSED"
+          ESLINT_STATUS="PASSED"
         else
-          ESLINT_STATUS="❌ FAILED"
+          ESLINT_STATUS="FAILED"
         fi
         
         # Prettier check
         echo "Checking code formatting with Prettier..."
         if npm run format:check 2>&1; then
-          PRETTIER_STATUS="✅ PASSED"
+          PRETTIER_STATUS="PASSED"
         else
-          PRETTIER_STATUS="❌ FAILED"
+          PRETTIER_STATUS="FAILED"
         fi
         
         # TypeScript check (if applicable)
         echo "Running TypeScript check..."
         if npm run type-check 2>&1; then
-          TYPESCRIPT_STATUS="✅ PASSED"
+          TYPESCRIPT_STATUS="PASSED"
         else
-          TYPESCRIPT_STATUS="❌ FAILED"
+          TYPESCRIPT_STATUS="FAILED"
         fi
         
         # Store quality check results
@@ -445,10 +445,11 @@ jobs:
 
   sonarqube-scan-backend:
     name: SonarQube Scan - Backend
-    needs: backend-quality-tests
+    needs: [detect-changes, prepare-backend-matrix]
     if: |
-      github.ref == 'refs/heads/main' ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
+      needs.prepare-backend-matrix.outputs.has-changes == 'true' &&
+      (github.ref == 'refs/heads/main' ||
+       (github.event_name == 'pull_request' && github.base_ref == 'main'))
     runs-on: ubuntu-latest
     strategy:
       matrix:
