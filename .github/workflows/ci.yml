@@ -1,0 +1,415 @@
+name: Detect Directory Changes
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ui-changed: ${{ steps.changes.outputs.ui }}
+      any-changes: ${{ steps.changes.outputs.any-changes }}
+      changed-subdirs: ${{ steps.changes.outputs.changed-subdirs }}
+      changed-services: ${{ steps.changes.outputs.changed-services }}
+      changed-agents: ${{ steps.changes.outputs.changed-agents }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Fetch current commit and parent
+    
+    - name: Detect changed directories
+      id: changes
+      run: |
+        # For pull requests, compare against the target branch
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Comparing PR: $BASE_SHA..$HEAD_SHA"
+          CHANGED_FILES=$(git diff --name-only $BASE_SHA..$HEAD_SHA)
+        else
+          # For push events, compare HEAD with HEAD~1
+          echo "Comparing push: HEAD~1..HEAD"
+          CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD)
+        fi
+        
+        echo "Changed files:"
+        echo "$CHANGED_FILES"
+        echo "---"
+        
+        # Initialize arrays for changed subdirectories
+        UI_CHANGED=false
+        CHANGED_SUBDIRS=""
+        CHANGED_SERVICES=""
+        CHANGED_AGENTS=""
+        
+        # Check each changed file against our target directories
+        while IFS= read -r file; do
+          if [[ -n "$file" ]]; then
+            echo "Checking file: $file"
+            
+            # Check backend/services/*/*
+            if [[ "$file" == backend/services/*/* ]]; then
+              # Extract the specific service directory (second level)
+              SERVICE_DIR=$(echo "$file" | cut -d'/' -f3)
+              FULL_SERVICE_PATH="backend/services/$SERVICE_DIR"
+              echo "  -> Service changed: $FULL_SERVICE_PATH"
+              
+              if [[ "$CHANGED_SUBDIRS" != *"$FULL_SERVICE_PATH"* ]]; then
+                CHANGED_SUBDIRS="${CHANGED_SUBDIRS:+$CHANGED_SUBDIRS,}$FULL_SERVICE_PATH"
+              fi
+              if [[ "$CHANGED_SERVICES" != *"$SERVICE_DIR"* ]]; then
+                CHANGED_SERVICES="${CHANGED_SERVICES:+$CHANGED_SERVICES,}$SERVICE_DIR"
+              fi
+            fi
+            
+            # Check backend/agents/*/*
+            if [[ "$file" == backend/agents/*/* ]]; then
+              # Extract the specific agent directory (second level)
+              AGENT_DIR=$(echo "$file" | cut -d'/' -f3)
+              FULL_AGENT_PATH="backend/agents/$AGENT_DIR"
+              echo "  -> Agent changed: $FULL_AGENT_PATH"
+              
+              if [[ "$CHANGED_SUBDIRS" != *"$FULL_AGENT_PATH"* ]]; then
+                CHANGED_SUBDIRS="${CHANGED_SUBDIRS:+$CHANGED_SUBDIRS,}$FULL_AGENT_PATH"
+              fi
+              if [[ "$CHANGED_AGENTS" != *"$AGENT_DIR"* ]]; then
+                CHANGED_AGENTS="${CHANGED_AGENTS:+$CHANGED_AGENTS,}$AGENT_DIR"
+              fi
+            fi
+            
+            # Check ui/
+            if [[ "$file" == ui/* ]]; then
+              echo "  -> UI changed"
+              UI_CHANGED=true
+              if [[ "$CHANGED_SUBDIRS" != *"ui"* ]]; then
+                CHANGED_SUBDIRS="${CHANGED_SUBDIRS:+$CHANGED_SUBDIRS,}ui"
+              fi
+            fi
+          fi
+        done <<< "$CHANGED_FILES"
+        
+        # Determine if any relevant changes occurred
+        ANY_CHANGES=false
+        if [[ -n "$CHANGED_SERVICES" || -n "$CHANGED_AGENTS" || "$UI_CHANGED" == "true" ]]; then
+          ANY_CHANGES=true
+        fi
+        
+        # Output results
+        echo "Results:"
+        echo "  UI Changed: $UI_CHANGED"
+        echo "  Any Changes: $ANY_CHANGES"
+        echo "  Changed Subdirectories: $CHANGED_SUBDIRS"
+        echo "  Changed Services: $CHANGED_SERVICES"
+        echo "  Changed Agents: $CHANGED_AGENTS"
+        
+        # Set outputs for other jobs
+        echo "ui=$UI_CHANGED" >> $GITHUB_OUTPUT
+        echo "any-changes=$ANY_CHANGES" >> $GITHUB_OUTPUT
+        echo "changed-subdirs=$CHANGED_SUBDIRS" >> $GITHUB_OUTPUT
+        echo "changed-services=$CHANGED_SERVICES" >> $GITHUB_OUTPUT
+        echo "changed-agents=$CHANGED_AGENTS" >> $GITHUB_OUTPUT
+
+  # Generate matrix for changed backend components
+  prepare-backend-matrix:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.changed-services != '' || needs.detect-changes.outputs.changed-agents != ''
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has-changes: ${{ steps.set-matrix.outputs.has-changes }}
+    
+    steps:
+    - name: Generate test matrix
+      id: set-matrix
+      run: |
+        MATRIX_DIRS=""
+        HAS_CHANGES=false
+        
+        # Add changed services to matrix
+        if [[ -n "${{ needs.detect-changes.outputs.changed-services }}" ]]; then
+          IFS=',' read -ra SERVICES <<< "${{ needs.detect-changes.outputs.changed-services }}"
+          for service in "${SERVICES[@]}"; do
+            if [[ -n "$service" ]]; then
+              MATRIX_DIRS="${MATRIX_DIRS:+$MATRIX_DIRS,}\"backend/services/$service\""
+              HAS_CHANGES=true
+            fi
+          done
+        fi
+        
+        # Add changed agents to matrix
+        if [[ -n "${{ needs.detect-changes.outputs.changed-agents }}" ]]; then
+          IFS=',' read -ra AGENTS <<< "${{ needs.detect-changes.outputs.changed-agents }}"
+          for agent in "${AGENTS[@]}"; do
+            if [[ -n "$agent" ]]; then
+              MATRIX_DIRS="${MATRIX_DIRS:+$MATRIX_DIRS,}\"backend/agents/$agent\""
+              HAS_CHANGES=true
+            fi
+          done
+        fi
+        
+        # Create JSON matrix
+        if [[ "$HAS_CHANGES" == "true" ]]; then
+          MATRIX_JSON="{\"directory\":[$MATRIX_DIRS]}"
+          echo "Generated matrix: $MATRIX_JSON"
+        else
+          MATRIX_JSON="{\"directory\":[]}"
+        fi
+        
+        echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+        echo "has-changes=$HAS_CHANGES" >> $GITHUB_OUTPUT
+
+  # Test backend components using matrix strategy
+  test-backend:
+    needs: [detect-changes, prepare-backend-matrix]
+    runs-on: ubuntu-latest
+    if: needs.prepare-backend-matrix.outputs.has-changes == 'true'
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-backend-matrix.outputs.matrix) }}
+      fail-fast: false  # Continue testing other dirs even if one fails
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        echo "Installing dependencies for ${{ matrix.directory }}"
+        python -m pip install --upgrade pip
+        
+        # Install common dependencies
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+        
+        # Install directory-specific dependencies if they exist
+        if [ -f "${{ matrix.directory }}/requirements.txt" ]; then
+          pip install -r "${{ matrix.directory }}/requirements.txt"
+        fi
+        
+        # Install testing dependencies
+        pip install pytest pytest-cov flake8 black isort mypy
+    
+    - name: Code quality checks
+      run: |
+        echo "Running code quality checks for ${{ matrix.directory }}"
+        
+        # Initialize summary
+        echo "## 🔍 Code Quality Report for \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Format check with black
+        echo "Checking code formatting..."
+        if black --check "${{ matrix.directory }}" 2>&1; then
+          echo "✅ **Code Formatting**: PASSED" >> $GITHUB_STEP_SUMMARY
+          BLACK_STATUS="✅ PASSED"
+        else
+          echo "❌ **Code Formatting**: FAILED" >> $GITHUB_STEP_SUMMARY
+          BLACK_STATUS="❌ FAILED"
+        fi
+        
+        # Import sorting check
+        echo "Checking import sorting..."
+        if isort --check-only "${{ matrix.directory }}" 2>&1; then
+          echo "✅ **Import Sorting**: PASSED" >> $GITHUB_STEP_SUMMARY
+          ISORT_STATUS="✅ PASSED"
+        else
+          echo "❌ **Import Sorting**: FAILED" >> $GITHUB_STEP_SUMMARY
+          ISORT_STATUS="❌ FAILED"
+        fi
+        
+        # Linting with flake8
+        echo "Running linter..."
+        if flake8 "${{ matrix.directory }}" --format='%(path)s:%(row)d:%(col)d: %(code)s %(text)s' 2>&1; then
+          echo "✅ **Linting (flake8)**: PASSED" >> $GITHUB_STEP_SUMMARY
+          FLAKE8_STATUS="✅ PASSED"
+        else
+          echo "❌ **Linting (flake8)**: FAILED" >> $GITHUB_STEP_SUMMARY
+          FLAKE8_STATUS="❌ FAILED"
+        fi
+        
+        # Type checking with mypy
+        echo "Running type checker..."
+        if mypy "${{ matrix.directory }}" 2>&1; then
+          echo "✅ **Type Checking (mypy)**: PASSED" >> $GITHUB_STEP_SUMMARY
+          MYPY_STATUS="✅ PASSED"
+        else
+          echo "❌ **Type Checking (mypy)**: FAILED" >> $GITHUB_STEP_SUMMARY
+          MYPY_STATUS="❌ FAILED"
+        fi
+        
+        # Add summary table
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Formatting (black) | $BLACK_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Import Sorting (isort) | $ISORT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Linting (flake8) | $FLAKE8_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Type Checking (mypy) | $MYPY_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Run tests
+      run: |
+        echo "Running tests for ${{ matrix.directory }}"
+        
+        # Add test section to summary
+        echo "## 🧪 Test Results for \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Run pytest with coverage
+        if [ -d "${{ matrix.directory }}/tests" ]; then
+          echo "📁 Found tests directory: \`${{ matrix.directory }}/tests\`" >> $GITHUB_STEP_SUMMARY
+          if pytest "${{ matrix.directory }}/tests" \
+            --cov="${{ matrix.directory }}" \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage-${{ matrix.directory }}.xml \
+            --cov-report=html:htmlcov-${{ matrix.directory }} \
+            --junit-xml=test-results-${{ matrix.directory }}.xml \
+            -v 2>&1; then
+            echo "✅ **Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+            TEST_STATUS="✅ PASSED"
+          else
+            echo "❌ **Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+            TEST_STATUS="❌ FAILED"
+          fi
+        else
+          echo "📁 No tests directory found, searching for test files..." >> $GITHUB_STEP_SUMMARY
+          if find "${{ matrix.directory }}" -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            echo "📄 Found individual test files" >> $GITHUB_STEP_SUMMARY
+            if pytest "${{ matrix.directory }}" \
+              --cov="${{ matrix.directory }}" \
+              --cov-report=term-missing \
+              --cov-report=xml:coverage-${{ matrix.directory }}.xml \
+              --cov-report=html:htmlcov-${{ matrix.directory }} \
+              --junit-xml=test-results-${{ matrix.directory }}.xml \
+              -v 2>&1; then
+              echo "✅ **Tests**: PASSED" >> $GITHUB_STEP_SUMMARY
+              TEST_STATUS="✅ PASSED"
+            else
+              echo "❌ **Tests**: FAILED" >> $GITHUB_STEP_SUMMARY
+              TEST_STATUS="❌ FAILED"
+            fi
+          else
+            echo "⚠️ **Tests**: NO TESTS FOUND" >> $GITHUB_STEP_SUMMARY
+            TEST_STATUS="⚠️ NO TESTS"
+          fi
+        fi
+        
+    - name: Parse and display coverage
+      if: always()
+      run: |
+        # Parse coverage from XML and add to summary
+        if [ -f "coverage-${{ matrix.directory }}.xml" ]; then
+          # Extract coverage percentage from XML
+          COVERAGE=$(python3 -c "
+        import xml.etree.ElementTree as ET
+        try:
+            tree = ET.parse('coverage-${{ matrix.directory }}.xml')
+            root = tree.getroot()
+            coverage = root.attrib.get('line-rate', '0')
+            percentage = float(coverage) * 100
+            print(f'{percentage:.1f}')
+        except:
+            print('0.0')
+        ")
+          
+          echo "## 📊 Coverage Report for \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Coverage badge color based on percentage
+          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COVERAGE_COLOR="🟢"
+            COVERAGE_STATUS="Excellent"
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            COVERAGE_COLOR="🟡"
+            COVERAGE_STATUS="Good"
+          elif (( $(echo "$COVERAGE >= 40" | bc -l) )); then
+            COVERAGE_COLOR="🟠"
+            COVERAGE_STATUS="Fair"
+          else
+            COVERAGE_COLOR="🔴"
+            COVERAGE_STATUS="Poor"
+          fi
+          
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Coverage | $COVERAGE_COLOR **${COVERAGE}%** ($COVERAGE_STATUS) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | $TEST_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add coverage details if available
+          if [ -f "htmlcov-${{ matrix.directory }}/index.html" ]; then
+            echo "📋 **Detailed coverage report generated**: \`htmlcov-${{ matrix.directory }}/index.html\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "## 📊 Coverage Report for \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ No coverage data available" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        file: ./coverage-${{ matrix.directory }}.xml
+        flags: ${{ matrix.directory }}
+        name: coverage-${{ matrix.directory }}
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.directory }}
+        path: |
+          test-results-${{ matrix.directory }}.xml
+          coverage-${{ matrix.directory }}.xml
+          htmlcov-${{ matrix.directory }}/
+
+  ui-job:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.ui-changed == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run UI tasks
+      run: |
+        echo "Running tasks for UI"
+        echo "Changed subdirectories: ${{ needs.detect-changes.outputs.changed-subdirs }}"
+        # Add your UI specific tasks here
+
+  # Job that runs only if any relevant changes are detected
+  deploy-job:
+    needs: [detect-changes, test-backend, ui-job]
+    runs-on: ubuntu-latest
+    if: always() && needs.detect-changes.outputs.any-changes == 'true'
+    
+    steps:
+    - name: Deploy changes
+      run: |
+        echo "Deploying changes for subdirectories: ${{ needs.detect-changes.outputs.changed-subdirs }}"
+        # Add deployment logic here
+
+  # Job that runs when no relevant changes are detected
+  no-changes-job:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.any-changes == 'false'
+    
+    steps:
+    - name: No relevant changes
+      run: |
+        echo "No changes detected in monitored directories (backend/services, backend/agents, ui)"
+        echo "Skipping pipeline execution"
