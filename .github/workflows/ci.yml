@@ -164,7 +164,7 @@ jobs:
         echo "has-changes=$HAS_CHANGES" >> $GITHUB_OUTPUT
 
   # Test backend components using matrix strategy
-  test-backend:
+  backend-quality-tests:
     needs: [detect-changes, prepare-backend-matrix]
     runs-on: ubuntu-latest
     if: needs.prepare-backend-matrix.outputs.has-changes == 'true'
@@ -297,27 +297,33 @@ jobs:
           COVERAGE="N/A"
         fi
         
-        # Generate professional summary table
+        # Validate coverage > 90
+        if [ "$COVERAGE" != "N/A" ]; then
+          COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
+          if (( $(echo "$COVERAGE_NUM > 90" | bc -l) )); then
+            COVERAGE_STATUS="✅ PASSED ($COVERAGE%)"
+          else
+            COVERAGE_STATUS="❌ FAILED ($COVERAGE%)"
+          fi
+        else
+          COVERAGE_STATUS="N/A"
+        fi
+        
+        # Generate professional summary tables
         echo "## Test Results: \`${{ matrix.directory }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Check | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
-        echo "|-------|--------|----------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Code Formatting | $BLACK_STATUS | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| Import Sorting | $ISORT_STATUS | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| Linting | $FLAKE8_STATUS | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| Type Checking | $MYPY_STATUS | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| Unit Tests | $TEST_STATUS | ${COVERAGE}% |" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Formatting | $BLACK_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Import Sorting | $ISORT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Linting | $FLAKE8_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Type Checking | $MYPY_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | $TEST_STATUS | $COVERAGE_STATUS |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
     
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v5
-      if: always()
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage-${{ matrix.directory }}.xml
-        flags: ${{ matrix.directory }}
-        name: coverage-${{ matrix.directory }}
-
 
   ui-job:
     needs: detect-changes
@@ -328,23 +334,154 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Run UI tasks
-      run: |
-        echo "Running tasks for UI"
-        echo "Changed subdirectories: ${{ needs.detect-changes.outputs.changed-subdirs }}"
-        # Add your UI specific tasks here
-
-  # Job that runs only if any relevant changes are detected
-  deploy-job:
-    needs: [detect-changes, test-backend, ui-job]
-    runs-on: ubuntu-latest
-    if: always() && needs.detect-changes.outputs.any-changes == 'true'
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'ui/package-lock.json'
     
-    steps:
-    - name: Deploy changes
+    - name: Install dependencies
       run: |
-        echo "Deploying changes for subdirectories: ${{ needs.detect-changes.outputs.changed-subdirs }}"
-        # Add deployment logic here
+        cd ui
+        npm ci
+    
+    - name: Code quality checks
+      run: |
+        cd ui
+        echo "Running code quality checks for UI"
+        
+        # ESLint check
+        echo "Running ESLint..."
+        if npm run lint 2>&1; then
+          ESLINT_STATUS="✅ PASSED"
+        else
+          ESLINT_STATUS="❌ FAILED"
+        fi
+        
+        # Prettier check
+        echo "Checking code formatting with Prettier..."
+        if npm run format:check 2>&1; then
+          PRETTIER_STATUS="✅ PASSED"
+        else
+          PRETTIER_STATUS="❌ FAILED"
+        fi
+        
+        # TypeScript check (if applicable)
+        echo "Running TypeScript check..."
+        if npm run type-check 2>&1; then
+          TYPESCRIPT_STATUS="✅ PASSED"
+        else
+          TYPESCRIPT_STATUS="❌ FAILED"
+        fi
+        
+        # Store quality check results
+        echo "ESLINT_STATUS=$ESLINT_STATUS" >> $GITHUB_ENV
+        echo "PRETTIER_STATUS=$PRETTIER_STATUS" >> $GITHUB_ENV
+        echo "TYPESCRIPT_STATUS=$TYPESCRIPT_STATUS" >> $GITHUB_ENV
+    
+    - name: Run tests
+      run: |
+        cd ui
+        echo "Running tests for UI"
+        
+        # Run tests with coverage
+        if npm test -- --coverage --watchAll=false --coverageReporters=text-lcov,xml 2>&1; then
+          TEST_STATUS="✅ PASSED"
+        else
+          TEST_STATUS="❌ FAILED"
+        fi
+        
+        # Store test status
+        echo "TEST_STATUS=$TEST_STATUS" >> $GITHUB_ENV
+    
+    - name: Generate summary report
+      if: always()
+      run: |
+        cd ui
+        
+        # Parse coverage from coverage-summary.json or lcov.info
+        if [ -f "coverage/coverage-summary.json" ]; then
+          COVERAGE=$(node -e "
+            const fs = require('fs');
+            try {
+              const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+              const linesCoverage = summary.total.lines.pct;
+              console.log(linesCoverage.toFixed(1));
+            } catch (e) {
+              console.log('0.0');
+            }
+          ")
+        else
+          COVERAGE="N/A"
+        fi
+        
+        # Validate coverage > 90
+        if [ "$COVERAGE" != "N/A" ]; then
+          COVERAGE_NUM=$(echo "$COVERAGE" | awk '{print ($0+0)}')
+          if (( $(echo "$COVERAGE_NUM > 90" | bc -l) )); then
+            COVERAGE_STATUS="✅ PASSED ($COVERAGE%)"
+          else
+            COVERAGE_STATUS="❌ FAILED ($COVERAGE%)"
+          fi
+        else
+          COVERAGE_STATUS="N/A"
+        fi
+        
+        # Generate professional summary tables
+        echo "## Test Results: \`ui\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ESLint | $ESLINT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Formatting | $PRETTIER_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "| Type Checking | $TYPESCRIPT_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | Status | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | $TEST_STATUS | $COVERAGE_STATUS |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+
+  sonarqube-scan-backend:
+    name: SonarQube Scan - Backend
+    needs: backend-quality-tests
+    if: |
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ${{ fromJson(needs.prepare-backend-matrix.outputs.matrix).directory }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.0
+        with:
+          projectBaseDir: ${{ matrix.directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  sonarqube-scan-ui:
+    name: SonarQube Scan - UI
+    needs: [detect-changes, ui-job]
+    if: |
+      needs.detect-changes.outputs.ui-changed == 'true' &&
+      (github.ref == 'refs/heads/main' ||
+       (github.event_name == 'pull_request' && github.base_ref == 'main'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.0
+        with:
+          projectBaseDir: ui
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # Job that runs when no relevant changes are detected
   no-changes-job:
