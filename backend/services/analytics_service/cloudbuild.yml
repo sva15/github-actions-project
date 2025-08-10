@@ -1,24 +1,138 @@
 steps:
   # Install dependencies
-  - name: 'python:3.9-slim'
+  - name: 'python:3.11-slim'
+    id: 'install-deps'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        echo "=== Installing Dependencies ==="
         pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
+        pip install pytest pytest-cov flake8 black isort mypy
+        echo "Dependencies installed successfully"
 
-  # Run tests
-  - name: 'python:3.9-slim'
+  # Code quality checks
+  - name: 'python:3.11-slim'
+    id: 'code-quality'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        echo "=== Code Quality Checks ==="
+        
+        # Install dependencies first
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black isort mypy
+        
+        # Format check with black
+        echo "Checking code formatting..."
+        if black --check .; then
+          echo "✓ Code formatting: PASSED"
+          BLACK_STATUS="PASSED"
+        else
+          echo "✗ Code formatting: FAILED"
+          BLACK_STATUS="FAILED"
+          exit 1
+        fi
+        
+        # Import sorting check
+        echo "Checking import sorting..."
+        if isort --check-only .; then
+          echo "✓ Import sorting: PASSED"
+          ISORT_STATUS="PASSED"
+        else
+          echo "✗ Import sorting: FAILED"
+          ISORT_STATUS="FAILED"
+          exit 1
+        fi
+        
+        # Linting with flake8
+        echo "Running linter..."
+        if flake8 . --format='%(path)s:%(row)d:%(col)d: %(code)s %(text)s'; then
+          echo "✓ Linting: PASSED"
+          FLAKE8_STATUS="PASSED"
+        else
+          echo "✗ Linting: FAILED"
+          FLAKE8_STATUS="FAILED"
+          exit 1
+        fi
+        
+        # Type checking with mypy
+        echo "Running type checker..."
+        if mypy .; then
+          echo "✓ Type checking: PASSED"
+          MYPY_STATUS="PASSED"
+        else
+          echo "✗ Type checking: FAILED"
+          MYPY_STATUS="FAILED"
+          exit 1
+        fi
+        
+        echo "=== All Quality Checks Passed ==="
+
+  # Run comprehensive tests
+  - name: 'python:3.11-slim'
+    id: 'run-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=== Running Tests ==="
+        
+        # Install dependencies
         pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov
-        python -m pytest test_main.py -v --cov=main --cov-report=term
+        
+        # Run tests with coverage
+        if [ -d "tests" ]; then
+          pytest tests/ \
+            --cov=. \
+            --cov-branch \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=90 \
+            -v
+        else
+          # Look for test files in current directory
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            pytest . \
+              --cov=. \
+              --cov-branch \
+              --cov-report=xml:coverage.xml \
+              --cov-report=term-missing \
+              --cov-fail-under=90 \
+              -v
+          else
+            echo "No tests found - skipping test execution"
+            exit 1
+          fi
+        fi
+        
+        echo "=== Tests Completed Successfully ==="
+
+  # SonarQube analysis (only on main branch)
+  - name: 'sonarsource/sonar-scanner-cli:latest'
+    id: 'sonar-analysis'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "${BRANCH_NAME}" = "main" ]; then
+          echo "=== SonarQube Analysis (Main Branch) ==="
+          sonar-scanner \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+          echo "SonarQube analysis completed"
+        else
+          echo "=== Skipping SonarQube Analysis (Not Main Branch) ==="
+          echo "Current branch: ${BRANCH_NAME}"
+          echo "SonarQube analysis only runs on main branch"
+        fi
+    env:
+      - 'SONAR_TOKEN=$_SONAR_TOKEN'
 
   # Deploy to Cloud Functions
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:latest'
@@ -59,6 +173,8 @@ steps:
 substitutions:
   _REGION: 'us-central1'
   _ENVIRONMENT: 'staging'
+  _SONAR_TOKEN: 'your-sonar-token-here'
+  _SONAR_ORGANIZATION: 'your-sonar-organization'
 
 options:
   logging: CLOUD_LOGGING_ONLY
