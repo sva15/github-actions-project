@@ -75,6 +75,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: SonarQube Scan
+      if: github.ref == 'refs/heads/main'
       uses: sonarsource/sonarqube-scan-action@master
       with:
         projectBaseDir: ./calculator-project
