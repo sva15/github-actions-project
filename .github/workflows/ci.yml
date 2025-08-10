@@ -365,15 +365,6 @@ jobs:
         flags: ${{ matrix.directory }}
         name: coverage-${{ matrix.directory }}
     
-    - name: Upload test results
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: test-results-${{ matrix.directory }}
-        path: |
-          test-results-${{ matrix.directory }}.xml
-          coverage-${{ matrix.directory }}.xml
-          htmlcov-${{ matrix.directory }}/
 
   ui-job:
     needs: detect-changes
