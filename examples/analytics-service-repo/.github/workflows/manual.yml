@@ -1,0 +1,43 @@
+name: Manual Analytics Service CI/CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-tests:
+        description: 'Run tests'
+        required: false
+        type: boolean
+        default: true
+      run-quality-checks:
+        description: 'Run code quality checks'
+        required: false
+        type: boolean
+        default: true
+      run-sonarqube:
+        description: 'Run SonarQube analysis'
+        required: false
+        type: boolean
+        default: false
+      coverage-threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        type: number
+        default: 90
+
+jobs:
+  manual-ci-cd:
+    name: Manual CI/CD Pipeline
+    uses: your-org/reusable-workflows/.github/workflows/manual-trigger.yml@main
+    with:
+      service-type: 'python-service'
+      service-name: 'analytics-service'
+      run-tests: ${{ inputs.run-tests }}
+      run-quality-checks: ${{ inputs.run-quality-checks }}
+      run-sonarqube: ${{ inputs.run-sonarqube }}
+      coverage-threshold: ${{ inputs.coverage-threshold }}
+      python-version: '3.11'
+      sonar-project-key: 'sva15_analytics-service'
+      sonar-organization: 'sva15'
+      working-directory: '.'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

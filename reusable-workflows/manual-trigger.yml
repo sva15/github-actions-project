@@ -1,0 +1,91 @@
+name: Manual CI/CD Trigger
+
+on:
+  workflow_call:
+    inputs:
+      service-type:
+        description: 'Type of service (python-service, ui, agent)'
+        required: true
+        type: string
+      service-name:
+        description: 'Name of the service'
+        required: true
+        type: string
+      run-tests:
+        description: 'Run tests'
+        required: false
+        type: boolean
+        default: true
+      run-quality-checks:
+        description: 'Run code quality checks'
+        required: false
+        type: boolean
+        default: true
+      run-sonarqube:
+        description: 'Run SonarQube analysis'
+        required: false
+        type: boolean
+        default: false
+      coverage-threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        type: number
+        default: 90
+      python-version:
+        description: 'Python version (for Python services)'
+        required: false
+        type: string
+        default: '3.11'
+      node-version:
+        description: 'Node.js version (for UI)'
+        required: false
+        type: string
+        default: '18'
+      sonar-project-key:
+        description: 'SonarQube project key'
+        required: true
+        type: string
+      sonar-organization:
+        description: 'SonarQube organization'
+        required: true
+        type: string
+      working-directory:
+        description: 'Working directory'
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarCloud token'
+        required: false
+
+jobs:
+  python-service:
+    name: Python Service CI/CD
+    if: ${{ inputs.service-type == 'python-service' || inputs.service-type == 'agent' }}
+    uses: ./.github/workflows/python-service-ci.yml
+    with:
+      service-name: ${{ inputs.service-name }}
+      python-version: ${{ inputs.python-version }}
+      coverage-threshold: ${{ inputs.coverage-threshold }}
+      run-sonarqube: ${{ inputs.run-sonarqube }}
+      sonar-project-key: ${{ inputs.sonar-project-key }}
+      sonar-organization: ${{ inputs.sonar-organization }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  ui:
+    name: UI CI/CD
+    if: ${{ inputs.service-type == 'ui' }}
+    uses: ./.github/workflows/ui-ci.yml
+    with:
+      ui-name: ${{ inputs.service-name }}
+      node-version: ${{ inputs.node-version }}
+      coverage-threshold: ${{ inputs.coverage-threshold }}
+      run-sonarqube: ${{ inputs.run-sonarqube }}
+      sonar-project-key: ${{ inputs.sonar-project-key }}
+      sonar-organization: ${{ inputs.sonar-organization }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

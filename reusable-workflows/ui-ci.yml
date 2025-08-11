@@ -1,0 +1,287 @@
+name: UI CI/CD (Angular/React/Vue)
+
+on:
+  workflow_call:
+    inputs:
+      ui-name:
+        description: 'Name of the UI application (e.g., cloudsync-ui)'
+        required: true
+        type: string
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '18'
+      package-manager:
+        description: 'Package manager to use (npm, yarn, pnpm)'
+        required: false
+        type: string
+        default: 'npm'
+      build-command:
+        description: 'Build command to run'
+        required: false
+        type: string
+        default: 'npm run build'
+      test-command:
+        description: 'Test command to run'
+        required: false
+        type: string
+        default: 'npm run test:ci'
+      lint-command:
+        description: 'Lint command to run'
+        required: false
+        type: string
+        default: 'npm run lint'
+      coverage-threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        type: number
+        default: 80
+      run-sonarqube:
+        description: 'Whether to run SonarQube analysis'
+        required: false
+        type: boolean
+        default: true
+      sonar-project-key:
+        description: 'SonarQube project key'
+        required: true
+        type: string
+      sonar-organization:
+        description: 'SonarQube organization'
+        required: true
+        type: string
+      working-directory:
+        description: 'Working directory for the UI'
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarCloud token'
+        required: true
+
+jobs:
+  code-quality:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ inputs.package-manager }}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Run ESLint
+        run: |
+          echo "## ESLint Check" >> $GITHUB_STEP_SUMMARY
+          if ${{ inputs.lint-command }}; then
+            echo "✓ ESLint check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ ESLint check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Check Prettier formatting
+        run: |
+          echo "## Prettier Formatting Check" >> $GITHUB_STEP_SUMMARY
+          if npx prettier --check "src/**/*.{ts,tsx,js,jsx,html,css,scss,json}"; then
+            echo "✓ Prettier formatting check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ Prettier formatting check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: TypeScript compilation check
+        run: |
+          echo "## TypeScript Compilation Check" >> $GITHUB_STEP_SUMMARY
+          if npx tsc --noEmit; then
+            echo "✓ TypeScript compilation check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ TypeScript compilation check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  test:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    needs: code-quality
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ inputs.package-manager }}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          echo "## Test Results: ${{ inputs.ui-name }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Run tests with coverage
+          ${{ inputs.test-command }}
+          
+          # Extract coverage percentage (assuming Jest/Angular coverage)
+          if [ -f "coverage/lcov-report/index.html" ]; then
+            COVERAGE=$(grep -o "Functions[^%]*%" coverage/lcov-report/index.html | head -1 | grep -o "[0-9.]*" || echo "N/A")
+          elif [ -f "coverage/coverage-summary.json" ]; then
+            COVERAGE=$(node -p "JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json')).total.lines.pct" 2>/dev/null || echo "N/A")
+          else
+            COVERAGE="N/A"
+          fi
+          
+          echo "| Test Status | Coverage | Threshold |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|----------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PASSED | ${COVERAGE}% | ${{ inputs.coverage-threshold }}% |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report-${{ inputs.ui-name }}
+          path: ${{ inputs.working-directory }}/coverage/
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: code-quality
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ inputs.package-manager }}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+          elif [ "${{ inputs.package-manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Build application
+        run: |
+          echo "## Build Results: ${{ inputs.ui-name }}" >> $GITHUB_STEP_SUMMARY
+          
+          if ${{ inputs.build-command }}; then
+            echo "✓ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+            
+            # Get build size information
+            if [ -d "dist" ]; then
+              BUILD_SIZE=$(du -sh dist | cut -f1)
+              echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+              echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+              echo "| Build Size | ${BUILD_SIZE} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Build Status | SUCCESS |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✗ Build failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-${{ inputs.ui-name }}
+          path: ${{ inputs.working-directory }}/dist/
+
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: ${{ inputs.run-sonarqube && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v3
+        with:
+          name: coverage-report-${{ inputs.ui-name }}
+          path: ${{ inputs.working-directory }}/coverage/
+
+      - name: SonarQube Scan
+        uses: sonarcloud-github-action@master
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.organization=${{ inputs.sonar-organization }}
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.typescript.lcov.reportPaths=coverage/lcov.info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarcloud-github-action@master
+        timeout-minutes: 5
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Generate SonarQube summary
+        run: |
+          echo "## SonarQube Analysis: ${{ inputs.ui-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Gate | ${{ steps.sonarqube-quality-gate-check.outcome == 'success' && 'PASSED' || 'FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project Key | ${{ inputs.sonar-project-key }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Organization | ${{ inputs.sonar-organization }} |" >> $GITHUB_STEP_SUMMARY

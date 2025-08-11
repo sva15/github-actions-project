@@ -1,0 +1,314 @@
+REPOSITORY MIGRATION CHECKLIST
+================================
+
+MIGRATION FROM MONO REPO TO INDIVIDUAL SERVICE REPOSITORIES
+Project: CloudSync Platform
+Date: January 2025
+
+================================
+PRE-MIGRATION PREPARATION
+================================
+
+□ PHASE 1: REUSABLE WORKFLOWS SETUP
+  □ Create central reusable-workflows repository
+  □ Upload python-service-ci.yml workflow
+  □ Upload ui-ci.yml workflow  
+  □ Upload manual-trigger.yml workflow
+  □ Test reusable workflows in isolation
+  □ Configure repository permissions (public/private access)
+  □ Set up branch protection for main branch
+
+□ PHASE 2: SONARQUBE PROJECT SETUP
+  □ Create individual SonarQube projects:
+    □ sva15_analytics-service
+    □ sva15_user-service
+    □ sva15_notification-service
+    □ sva15_chatbot-agent
+    □ sva15_rag-agent
+    □ sva15_assistant-agent
+    □ sva15_cloudsync-ui
+  □ Generate organization-level SONAR_TOKEN
+  □ Test token permissions across all projects
+  □ Configure quality gates for each project
+  □ Validate coverage reporting setup
+
+================================
+INDIVIDUAL REPOSITORY CREATION
+================================
+
+□ ANALYTICS SERVICE REPOSITORY
+  Repository: your-org/analytics-service
+  □ Create new GitHub repository
+  □ Copy service code from mono repo backend/services/analytics_service/
+  □ Copy workflow files from examples/analytics-service-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Update sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+  □ Test manual workflow execution
+
+□ USER SERVICE REPOSITORY
+  Repository: your-org/user-service
+  □ Create new GitHub repository
+  □ Copy service code from mono repo backend/services/user_service/
+  □ Copy workflow files from examples/user-service-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Update sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+
+□ NOTIFICATION SERVICE REPOSITORY
+  Repository: your-org/notification-service
+  □ Create new GitHub repository
+  □ Copy service code from mono repo backend/services/notification_service/
+  □ Copy workflow files from examples/notification-service-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Update sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+
+□ CHATBOT AGENT REPOSITORY
+  Repository: your-org/chatbot-agent
+  □ Create new GitHub repository
+  □ Copy agent code from mono repo backend/agents/chatbot_agent/
+  □ Copy workflow files from examples/chatbot-agent-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Create sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+
+□ RAG AGENT REPOSITORY
+  Repository: your-org/rag-agent
+  □ Create new GitHub repository
+  □ Copy agent code from mono repo backend/agents/rag_agent/
+  □ Copy workflow files from examples/rag-agent-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Create sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+
+□ ASSISTANT AGENT REPOSITORY
+  Repository: your-org/assistant-agent
+  □ Create new GitHub repository
+  □ Copy agent code from mono repo backend/agents/assistant_agent/
+  □ Copy workflow files from examples/assistant-agent-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Create sonar-project.properties with correct project key
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+
+□ CLOUDSYNC UI REPOSITORY
+  Repository: your-org/cloudsync-ui
+  □ Create new GitHub repository
+  □ Copy UI code from mono repo ui/
+  □ Copy workflow files from examples/cloudsync-ui-repo/
+  □ Update workflow organization references
+  □ Add SONAR_TOKEN repository secret
+  □ Create sonar-project.properties with correct project key
+  □ Update package.json scripts for CI/CD compatibility
+  □ Test CI/CD pipeline with sample commit
+  □ Validate SonarQube integration
+  □ Test build and deployment processes
+
+================================
+WORKFLOW CONFIGURATION UPDATES
+================================
+
+□ UPDATE ORGANIZATION REFERENCES
+  Replace "your-org" with actual organization name in all workflows:
+  □ analytics-service/.github/workflows/ci.yml
+  □ analytics-service/.github/workflows/manual.yml
+  □ user-service/.github/workflows/ci.yml
+  □ notification-service/.github/workflows/ci.yml
+  □ chatbot-agent/.github/workflows/ci.yml
+  □ rag-agent/.github/workflows/ci.yml
+  □ assistant-agent/.github/workflows/ci.yml
+  □ cloudsync-ui/.github/workflows/ci.yml
+  □ cloudsync-ui/.github/workflows/manual.yml
+
+□ VALIDATE WORKFLOW PARAMETERS
+  □ Verify service names match repository names
+  □ Confirm SonarQube project keys are correct
+  □ Validate coverage thresholds are appropriate
+  □ Check Python/Node versions match requirements
+  □ Verify working directories are correct
+
+================================
+TESTING AND VALIDATION
+================================
+
+□ REUSABLE WORKFLOW TESTING
+  □ Test python-service-ci.yml with sample Python service
+  □ Test ui-ci.yml with sample UI application
+  □ Test manual-trigger.yml with different service types
+  □ Validate all input parameters work correctly
+  □ Test secret passing and permissions
+  □ Verify professional step summaries are generated
+
+□ INDIVIDUAL REPOSITORY TESTING
+  □ Test main branch pushes trigger workflows
+  □ Test pull request workflows
+  □ Test manual workflow dispatch
+  □ Validate code quality checks pass/fail correctly
+  □ Test coverage threshold enforcement
+  □ Verify SonarQube scans complete successfully
+  □ Test quality gate enforcement
+  □ Validate artifact uploads and downloads
+
+□ INTEGRATION TESTING
+  □ Test workflows across all 7 repositories
+  □ Validate SonarQube projects receive correct data
+  □ Test parallel workflow execution
+  □ Verify no resource conflicts or rate limiting
+  □ Test workflow performance and timing
+
+================================
+SECURITY AND PERMISSIONS
+================================
+
+□ REPOSITORY SECRETS CONFIGURATION
+  □ Add SONAR_TOKEN to analytics-service repository
+  □ Add SONAR_TOKEN to user-service repository
+  □ Add SONAR_TOKEN to notification-service repository
+  □ Add SONAR_TOKEN to chatbot-agent repository
+  □ Add SONAR_TOKEN to rag-agent repository
+  □ Add SONAR_TOKEN to assistant-agent repository
+  □ Add SONAR_TOKEN to cloudsync-ui repository
+
+□ BRANCH PROTECTION SETUP
+  □ Enable branch protection for main branch on all repositories
+  □ Require status checks to pass before merging
+  □ Require pull request reviews
+  □ Restrict pushes to main branch
+  □ Enable dismiss stale reviews when new commits are pushed
+
+□ ACCESS CONTROL VALIDATION
+  □ Verify team access to reusable-workflows repository
+  □ Confirm individual repository access permissions
+  □ Test SonarQube token permissions across all projects
+  □ Validate GitHub Actions permissions for workflow execution
+
+================================
+PERFORMANCE AND MONITORING
+================================
+
+□ PERFORMANCE BENCHMARKING
+  □ Measure CI/CD runtime for each repository
+  □ Compare performance vs mono repo approach
+  □ Monitor resource usage and costs
+  □ Track workflow success/failure rates
+  □ Measure SonarQube scan performance
+
+□ MONITORING SETUP
+  □ Set up workflow failure notifications
+  □ Configure SonarQube quality gate alerts
+  □ Monitor coverage trends across repositories
+  □ Track deployment success rates
+  □ Set up performance degradation alerts
+
+================================
+DOCUMENTATION AND TRAINING
+================================
+
+□ DOCUMENTATION UPDATES
+  □ Update README files for each repository
+  □ Document workflow usage and parameters
+  □ Create troubleshooting guides
+  □ Document SonarQube project configurations
+  □ Update deployment documentation
+
+□ TEAM TRAINING
+  □ Train team on new repository structure
+  □ Explain reusable workflow concepts
+  □ Document manual workflow usage
+  □ Provide SonarQube project access instructions
+  □ Create migration rollback procedures
+
+================================
+ROLLBACK PREPARATION
+================================
+
+□ BACKUP STRATEGY
+  □ Keep original mono repo active during migration
+  □ Document rollback procedures for each repository
+  □ Maintain workflow version history
+  □ Backup SonarQube project configurations
+  □ Document secret management rollback
+
+□ ROLLBACK TESTING
+  □ Test rollback procedures in development environment
+  □ Validate mono repo workflows still function
+  □ Test switching between mono repo and individual repos
+  □ Document rollback decision criteria
+
+================================
+GO-LIVE CHECKLIST
+================================
+
+□ FINAL VALIDATION
+  □ All 7 repositories created and configured
+  □ All workflows tested and validated
+  □ All SonarQube projects configured and tested
+  □ All secrets configured and tested
+  □ Performance benchmarks meet requirements
+  □ Team training completed
+
+□ PRODUCTION DEPLOYMENT
+  □ Update DNS/routing if applicable
+  □ Switch CI/CD triggers to new repositories
+  □ Update deployment pipelines
+  □ Monitor initial production runs
+  □ Validate end-to-end functionality
+
+□ POST-MIGRATION MONITORING
+  □ Monitor workflow performance for 1 week
+  □ Track quality metrics and coverage
+  □ Monitor SonarQube project health
+  □ Collect team feedback on new structure
+  □ Document lessons learned and improvements
+
+================================
+SUCCESS CRITERIA
+================================
+
+✓ All 7 repositories successfully migrated
+✓ All workflows execute without errors
+✓ Code quality standards maintained or improved
+✓ Coverage thresholds met across all projects
+✓ SonarQube integration working for all projects
+✓ CI/CD performance maintained or improved
+✓ Team productivity maintained or improved
+✓ Zero production incidents during migration
+
+================================
+ESTIMATED TIMELINE
+================================
+
+Phase 1 (Reusable Workflows): 1-2 days
+Phase 2 (SonarQube Setup): 1 day
+Phase 3 (Repository Creation): 3-4 days
+Phase 4 (Testing & Validation): 2-3 days
+Phase 5 (Go-Live & Monitoring): 1-2 days
+
+TOTAL ESTIMATED TIME: 8-12 days
+
+================================
+RISK MITIGATION
+================================
+
+HIGH RISK: SonarQube token permissions
+MITIGATION: Test thoroughly in development environment
+
+MEDIUM RISK: Workflow performance degradation
+MITIGATION: Benchmark and optimize before go-live
+
+LOW RISK: Team adoption challenges
+MITIGATION: Comprehensive training and documentation
+
+================================

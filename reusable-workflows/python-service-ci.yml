@@ -1,0 +1,244 @@
+name: Python Service CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Name of the service (e.g., analytics-service)'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.11'
+      coverage-threshold:
+        description: 'Coverage threshold percentage'
+        required: false
+        type: number
+        default: 90
+      run-sonarqube:
+        description: 'Whether to run SonarQube analysis'
+        required: false
+        type: boolean
+        default: true
+      sonar-project-key:
+        description: 'SonarQube project key'
+        required: true
+        type: string
+      sonar-organization:
+        description: 'SonarQube organization'
+        required: true
+        type: string
+      working-directory:
+        description: 'Working directory for the service'
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarCloud token'
+        required: true
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install black isort flake8 mypy pytest pytest-cov
+
+      - name: Code formatting check (Black)
+        run: |
+          echo "## Code Formatting Check" >> $GITHUB_STEP_SUMMARY
+          if black --check --diff .; then
+            echo "✓ Black formatting check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ Black formatting check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Import sorting check (isort)
+        run: |
+          echo "## Import Sorting Check" >> $GITHUB_STEP_SUMMARY
+          if isort --check-only --diff .; then
+            echo "✓ Import sorting check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ Import sorting check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Linting check (Flake8)
+        run: |
+          echo "## Linting Check" >> $GITHUB_STEP_SUMMARY
+          if flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics; then
+            echo "✓ Flake8 linting check passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ Flake8 linting check failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Type checking (mypy)
+        run: |
+          echo "## Type Checking" >> $GITHUB_STEP_SUMMARY
+          if mypy . --ignore-missing-imports; then
+            echo "✓ Type checking passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✗ Type checking failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  test:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    needs: code-quality
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          echo "## Test Results: ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Run tests with coverage
+          if [ -d "tests" ]; then
+            pytest tests/ \
+              --cov=. \
+              --cov-branch \
+              --cov-report=xml:coverage.xml \
+              --cov-report=term-missing \
+              --cov-fail-under=${{ inputs.coverage-threshold }} \
+              -v
+          else
+            # Look for test files in current directory
+            if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+              pytest . \
+                --cov=. \
+                --cov-branch \
+                --cov-report=xml:coverage.xml \
+                --cov-report=term-missing \
+                --cov-fail-under=${{ inputs.coverage-threshold }} \
+                -v
+            else
+              echo "No tests found - creating placeholder test" >> $GITHUB_STEP_SUMMARY
+              echo "| Test Status | Coverage | Threshold |" >> $GITHUB_STEP_SUMMARY
+              echo "|-------------|----------|-----------|" >> $GITHUB_STEP_SUMMARY
+              echo "| NO TESTS | N/A | ${{ inputs.coverage-threshold }}% |" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+          fi
+          
+          # Get coverage percentage
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.attrib['line-rate']) * 100:.1f}\")" 2>/dev/null || echo "N/A")
+          
+          echo "| Test Status | Coverage | Threshold |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|----------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PASSED | ${COVERAGE}% | ${{ inputs.coverage-threshold }}% |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report-${{ inputs.service-name }}
+          path: ${{ inputs.working-directory }}/coverage.xml
+
+  sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: test
+    if: ${{ inputs.run-sonarqube && (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v3
+        with:
+          name: coverage-report-${{ inputs.service-name }}
+          path: ${{ inputs.working-directory }}
+
+      - name: SonarQube Scan
+        uses: sonarcloud-github-action@master
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.organization=${{ inputs.sonar-organization }}
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarcloud-github-action@master
+        timeout-minutes: 5
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Generate SonarQube summary
+        run: |
+          echo "## SonarQube Analysis: ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Gate | ${{ steps.sonarqube-quality-gate-check.outcome == 'success' && 'PASSED' || 'FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project Key | ${{ inputs.sonar-project-key }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Organization | ${{ inputs.sonar-organization }} |" >> $GITHUB_STEP_SUMMARY

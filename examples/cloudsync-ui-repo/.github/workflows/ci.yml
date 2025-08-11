@@ -1,0 +1,26 @@
+name: CloudSync UI CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci-cd:
+    name: CI/CD Pipeline
+    uses: your-org/reusable-workflows/.github/workflows/ui-ci.yml@main
+    with:
+      ui-name: 'cloudsync-ui'
+      node-version: '18'
+      package-manager: 'npm'
+      build-command: 'npm run build'
+      test-command: 'npm run test:ci'
+      lint-command: 'npm run lint'
+      coverage-threshold: 80
+      run-sonarqube: true
+      sonar-project-key: 'sva15_cloudsync-ui'
+      sonar-organization: 'sva15'
+      working-directory: '.'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

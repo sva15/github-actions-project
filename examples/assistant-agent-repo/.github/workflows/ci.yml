@@ -1,0 +1,22 @@
+name: Assistant Agent CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci-cd:
+    name: CI/CD Pipeline
+    uses: your-org/reusable-workflows/.github/workflows/python-service-ci.yml@main
+    with:
+      service-name: 'assistant-agent'
+      python-version: '3.11'
+      coverage-threshold: 85
+      run-sonarqube: true
+      sonar-project-key: 'sva15_assistant-agent'
+      sonar-organization: 'sva15'
+      working-directory: '.'
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
